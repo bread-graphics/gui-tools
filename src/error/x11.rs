@@ -1,7 +1,10 @@
 // MIT/Apache2 License
 
 use core::fmt;
-use cty::c_int;
+use cty::{c_int, c_uchar, c_ulong};
+
+#[cfg(feature = "alloc")]
+use alloc::string::String;
 
 #[derive(Debug)]
 pub enum X11Error {
@@ -13,6 +16,15 @@ pub enum X11Error {
     BadVisualColorType(c_int),
     BadGetVisualInfo,
     BadDefaultVisual,
+    ErrorEventThrown {
+        serial: c_ulong,
+        error_code: c_ulong,
+        request_code: c_uchar,
+        minor_code: c_uchar,
+
+        #[cfg(feature = "alloc")]
+        error_description: String,
+    },
 }
 
 impl fmt::Display for X11Error {
@@ -39,6 +51,10 @@ impl fmt::Display for X11Error {
                 f.write_str("The XGetVisualInfo() function returned a null pointer")
             }
             Self::BadDefaultVisual => f.write_str("The default visual type pointer was null"),
+            #[cfg(not(feature = "alloc"))]
+            Self::ErrorEventThrown { serial, error_code, request_code, minor_code } => write!(f, "An X11 internal error occurred (serial: {} - error code: {} - request code: {} - minor code: {})", serial, error_code, request_code, minor_code),
+            #[cfg(feature = "alloc")]
+            Self::ErrorEventThrown { serial, error_code, request_code, minor_code, ref error_description } => write!(f, "An X11 internal error occurred: {} (serial: {} - error code: {} - request code: {} - minor code: {})", error_description, serial, error_code, request_code, minor_code),
         }
     }
 }

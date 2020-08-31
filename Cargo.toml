@@ -5,15 +5,23 @@ authors = ["not_a_seagull <jtnunley01@gmail.com>"]
 edition = "2018"
 
 [dependencies]
+async-trait = { version = "0.1.38", optional = true }
 cty = { version = "0.2.1" }
+crossbeam-queue = { version = "0.2.3", optional = true }
 cstr_core = { version = "0.2.2", features = ["nightly"] }
 euclid = { version = "0.22.0", default-features = false }
+futures-lite = { version = "0.1.10", optional = true }
 hashbrown = { version = "0.8.2", optional = true }
-parking_lot = { version = "0.11.0", features = ["nightly"], optional = true }
+log = "0.4.11"
+parking_lot = { version = "0.11.0", features = ["nightly", "deadlock_detection"], optional = true }
 owning_ref = "0.4.1"
 spinning_top = { version = "0.2.2", features = ["nightly", "owning_ref"] }
-spinny = { version = "0.1.1", features = ["nightly", "owning_ref"] }
-storagevec = { version = "0.1.0", default-features = false }
+spinny = { version = "0.2.0", features = ["nightly", "owning_ref"] }
+storagevec = { version = "0.1.1", default-features = false }
+tokio = { version = "0.2.22", features = ["rt-core"], optional = true }
+
+[dev-dependencies]
+env_logger = "0.7.1"
 
 [dependencies.x11nas]
 version = "2.19.0"
@@ -27,5 +35,6 @@ features = ["libloaderapi", "minwindef"]
 [features]
 default = ["std"]
 alloc = ["hashbrown", "storagevec/alloc"]
+async = ["std", "async-trait", "futures-lite", "tokio"]
 pl = ["std", "parking_lot"]
-std = ["alloc", "euclid/std"]
+std = ["alloc", "euclid/std", "crossbeam-queue"]

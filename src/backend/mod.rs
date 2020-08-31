@@ -5,7 +5,7 @@ pub use storage::*;
 
 use crate::{
     runtime::Runtime,
-    surface::{Surface, SurfaceProperties},
+    surface::{Surface, SurfaceInitialization},
 };
 
 pub mod x11;
@@ -22,22 +22,23 @@ pub enum BackendType {
 pub struct Backend {
     ty: BackendType,
     open_function: &'static dyn Fn() -> crate::Result<(usize, RuntimeInner)>,
-    surface_function: &'static dyn Fn(&Runtime, &SurfaceProperties) -> crate::Result<SurfaceInner>,
+    surface_function:
+        &'static dyn Fn(&Runtime, &SurfaceInitialization) -> crate::Result<SurfaceInner>,
 }
 
 impl Backend {
     #[inline]
     pub const fn new(
         ty: BackendType,
-        opener: &'static dyn Fn() -> crate::Result<(usize, RuntimeInner)>,
+        open_function: &'static dyn Fn() -> crate::Result<(usize, RuntimeInner)>,
         surface_function: &'static dyn Fn(
             &Runtime,
-            &SurfaceProperties,
+            &SurfaceInitialization,
         ) -> crate::Result<SurfaceInner>,
     ) -> Self {
         Self {
             ty,
-            open_function: opener,
+            open_function,
             surface_function,
         }
     }
@@ -56,7 +57,7 @@ impl Backend {
     pub fn surface(
         &self,
         runtime: &Runtime,
-        props: &SurfaceProperties,
+        props: &SurfaceInitialization,
     ) -> crate::Result<SurfaceInner> {
         (self.surface_function)(runtime, props)
     }

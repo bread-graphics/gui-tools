@@ -2,7 +2,7 @@
 
 use super::X11Monitor;
 use core::{mem::MaybeUninit, ptr::NonNull, slice};
-use cty::{c_int, c_long};
+use cty::{c_int, c_long, c_void};
 #[cfg(feature = "alloc")]
 use hashbrown::HashSet;
 use storagevec::StorageVec;
@@ -43,6 +43,8 @@ impl X11Visual {
     }
 
     fn from_x11_visual_info(info: &XVisualInfo) -> crate::Result<X11Visual> {
+        log::trace!("Convert XVisualInfo into X11Visual: {:?}", info);
+
         if info.depth < 1 {
             return Err(crate::X11Error::BadVisualDepth(info.depth).into());
         }
@@ -82,14 +84,22 @@ impl X11Visual {
     }
 
     pub(crate) fn setup_monitor(screen: &mut X11Monitor) -> crate::Result<()> {
+        log::debug!("Setting up monitor for screen #{}", screen.screen_id());
+
         let mut visual_count: MaybeUninit<c_int> = MaybeUninit::uninit();
-        let mut _visual_template: MaybeUninit<XVisualInfo> = MaybeUninit::uninit();
+        log::trace!("Unsafe code: using MaybeUninit::uninit().assume_init() to gradually initialize the visual template");
+        // SAFETY: X11 only uses the Screen field, due to the VisualScreenMask
+        let mut visual_template = XVisualInfo {
+            screen: screen.screen_id(),
+            ..unsafe { MaybeUninit::uninit().assume_init() }
+        };
+
         // SAFETY: Calls a C function; the result is checked
         let visual_ptr: *const XVisualInfo = unsafe {
             xlib::XGetVisualInfo(
                 screen.display().as_ptr(),
                 xlib::VisualScreenMask,
-                _visual_template.as_mut_ptr(),
+                &mut visual_template,
                 visual_count.as_mut_ptr(),
             )
         };
@@ -155,6 +165,10 @@ impl X11Visual {
         screen.default_visual =
             Some(default_visual_index.expect("Unable to find default visual in list"));
         screen.rgba_visual = rgba_visual_index;
+
+        // note: X11 expects us to free the visual ptr list
+        log::trace!("C function call: XFree({:p})", visual_ptr);
+        unsafe { xlib::XFree(visual_ptr as *mut c_void) };
 
         Ok(())
     }

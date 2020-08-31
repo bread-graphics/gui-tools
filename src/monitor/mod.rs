@@ -24,4 +24,10 @@ impl Monitor {
     pub fn height(&self) -> u32 {
         self.height
     }
+
+    /// Get the size of the monitor.
+    #[inline]
+    pub fn size(&self) -> (u32, u32) {
+        (self.width, self.height)
+    }
 }
