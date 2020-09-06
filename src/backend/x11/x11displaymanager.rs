@@ -9,15 +9,43 @@ use x11nas::xlib::Display;
 use hashbrown::HashMap;
 
 #[cfg(not(feature = "alloc"))]
-static CURRENT_DPY: RwLock<Option<NonNull<Display>>> = RwLock::new(None);
+#[repr(transparent)]
+struct DisplayContainer(Option<NonNull<Display>>);
+
+#[cfg(not(feature = "alloc"))]
+unsafe impl Send for DisplayContainer {}
+#[cfg(not(feature = "alloc"))]
+unsafe impl Sync for DisplayContainer {}
+
+#[cfg(not(feature = "alloc"))]
+impl DisplayContainer {
+    #[inline]
+    fn put(&mut self, dpy: NonNull<Display>) {
+        if self.0.is_none() {
+            self.0 = Some(dpy);
+        } else {
+            // how the hell did we end up with a data race on no_std?!?!
+            #[cfg(debug_assertions)]
+            panic!("Unexpected data race to set display variable");
+        }
+    }
+
+    #[inline]
+    fn is_ptr(&self, dpy: NonNull<Display>) -> bool {
+        self.0 == Some(dpy)
+    }
+}
+
+#[cfg(not(feature = "alloc"))]
+static CURRENT_DPY: RwLock<DisplayContainer> = RwLock::new(DisplayContainer(None));
 
 #[cfg(feature = "alloc")]
 static DPY_MAP: RwLock<Option<HashMap<usize, Runtime>>> = RwLock::new(None);
 
 #[cfg(not(feature = "alloc"))]
 pub fn get_runtime(dpy: NonNull<Display>) -> Option<Runtime> {
-    if CURRENT_DPY.read() == dpy {
-        Some(Runtime::global())
+    if CURRENT_DPY.read().is_ptr(dpy) {
+        Some(unsafe { Runtime::global() })
     } else {
         None
     }
@@ -39,7 +67,7 @@ pub fn get_runtime(dpy: NonNull<Display>) -> Option<Runtime> {
 
 #[cfg(not(feature = "alloc"))]
 pub fn set_runtime(dpy: NonNull<Display>, _runtime: Runtime) {
-    *CURRENT_DPR.write() = Some(dpy);
+    CURRENT_DPY.write().put(dpy);
 }
 
 #[cfg(feature = "alloc")]

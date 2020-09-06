@@ -2,19 +2,23 @@
 
 use crate::{
     backend::{x11::X11Surface, SurfaceInner},
+    color::{colors, Rgba},
     event::EventTypeMask,
+    geometry::Rectangle,
+    graphics::GraphicsInternal,
     mutex::ShimRwLock,
-    runtime::{Runtime, RuntimeBackend},
+    runtime::Runtime,
     string::CoolString,
 };
+use core::{mem, ptr::NonNull};
 use storagevec::StorageVec;
 
 mod starting_point;
 
 pub use starting_point::StartingPoint;
 
-/// The properties that a window can hold.
-#[derive(Debug, Default)]
+/// The properties that a surface can hold.
+#[derive(Debug)]
 pub struct SurfaceProperties {
     pub parent: Option<usize>,
     pub children: StorageVec<usize, 12>,
@@ -24,10 +28,14 @@ pub struct SurfaceProperties {
     pub height: u32,
     pub title: CoolString,
     pub event_mask: StorageVec<EventTypeMask, 20>,
+
+    pub background_color: Rgba,
+    pub border_color: Rgba,
+    pub border_width: u32,
 }
 
 /// The properties that a surface is initialized with.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct SurfaceInitialization {
     pub parent: Option<usize>,
     pub children: StorageVec<usize, 12>,
@@ -36,6 +44,10 @@ pub struct SurfaceInitialization {
     pub height: u32,
     pub title: CoolString,
     pub event_mask: StorageVec<EventTypeMask, 20>,
+
+    pub background_color: Rgba,
+    pub border_color: Rgba,
+    pub border_width: u32,
 }
 
 impl SurfaceProperties {
@@ -57,6 +69,9 @@ impl SurfaceProperties {
             title,
             children: StorageVec::new(),
             event_mask: StorageVec::new(),
+            background_color: colors::WHITE,
+            border_color: colors::BLACK,
+            border_width: 0,
         }
     }
 }
@@ -78,6 +93,9 @@ impl SurfaceInitialization {
             title: title.into(),
             children: StorageVec::new(),
             event_mask: StorageVec::new(),
+            background_color: colors::WHITE,
+            border_color: colors::BLACK,
+            border_width: 0,
         }
     }
 
@@ -93,11 +111,17 @@ impl SurfaceInitialization {
             children,
             title,
             event_mask,
+            background_color,
+            border_color,
+            border_width,
             ..
         } = self;
         let mut sp = SurfaceProperties::new(parent, x, y, width, height, title);
         sp.children = children;
         sp.event_mask = event_mask;
+        sp.background_color = background_color;
+        sp.border_color = border_color;
+        sp.border_width = border_width;
         sp
     }
 }
@@ -132,6 +156,21 @@ impl Surface {
         self.internal.id()
     }
 
+    /// Set the size of the window.
+    #[inline]
+    pub fn set_size(&self, width: u32, height: u32) -> crate::Result<()> {
+        self.internal.set_size(width, height)?;
+        // the backend should call set_size_no_backend
+        Ok(())
+    }
+
+    #[inline]
+    pub(crate) fn set_size_no_backend(&self, width: u32, height: u32) {
+        let mut p = self.properties.write();
+        p.width = width;
+        p.height = height;
+    }
+
     /// The width and height of the window.
     #[inline]
     pub fn size(&self) -> (u32, u32) {
@@ -145,9 +184,74 @@ impl Surface {
         self.properties.write().event_mask = em.iter().cloned().collect();
         self.internal.set_event_mask(em)
     }
+
+    /// Get the location of this surface.
+    #[inline]
+    pub fn location(&self) -> (i32, i32) {
+        let p = self.properties.read();
+        (p.x, p.y)
+    }
+
+    /// Set the location of this surface.
+    #[inline]
+    pub fn set_location(&self, x: i32, y: i32) -> crate::Result<()> {
+        self.internal.set_location(x, y)?;
+        // the backend should cal set_location_no_backend
+        Ok(())
+    }
+
+    #[inline]
+    pub(crate) fn set_location_no_backend(&self, x: i32, y: i32) {
+        let mut p = self.properties.write();
+        p.x = x;
+        p.y = y;
+    }
+
+    #[inline]
+    pub fn set_background_color(&self, clr: Rgba) -> crate::Result<()> {
+        let mut p = self.properties.write();
+        p.background_color = clr;
+        mem::drop(p);
+
+        self.internal.set_background_color(clr)?;
+        self.internal.invalidate(None)
+    }
+
+    #[inline]
+    pub fn set_border_color(&self, clr: Rgba) -> crate::Result<()> {
+        let mut p = self.properties.write();
+        p.border_color = clr;
+        mem::drop(p);
+
+        self.internal.set_border_color(clr)?;
+        self.internal.invalidate(None)
+    }
+
+    #[inline]
+    pub fn set_border_width(&self, width: u32) -> crate::Result<()> {
+        let mut p = self.properties.write();
+        p.border_width = width;
+        mem::drop(p);
+
+        self.internal.set_border_width(width)?;
+        self.internal.invalidate(None)
+    }
+
+    #[inline]
+    pub fn invalidate(&self, rect: Option<Rectangle>) -> crate::Result<()> {
+        self.internal.invalidate(rect)
+    }
 }
 
 pub trait SurfaceBackend {
     fn id(&self) -> usize;
     fn set_event_mask(&self, mask: &[EventTypeMask]) -> crate::Result<()>;
+    fn set_size(&self, width: u32, height: u32) -> crate::Result<()>;
+    fn set_location(&self, x: i32, y: i32) -> crate::Result<()>;
+    fn set_background_color(&self, clr: Rgba) -> crate::Result<()>;
+    fn set_border_color(&self, clr: Rgba) -> crate::Result<()>;
+    fn set_border_width(&self, width: u32) -> crate::Result<()>;
+
+    fn graphics_internal(&self) -> crate::Result<NonNull<dyn GraphicsInternal>>;
+    fn invalidate(&self, rect: Option<Rectangle>) -> crate::Result<()>;
 }

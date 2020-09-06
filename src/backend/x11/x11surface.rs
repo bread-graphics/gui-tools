@@ -1,19 +1,26 @@
 // MIT/Apache2 License
 
-use super::{X11Atom, X11Runtime};
+use super::X11Atom;
 use crate::{
+    color::Rgba,
+    error::x11_status_to_res,
     event::EventTypeMask,
+    geometry::Rectangle,
+    graphics::GraphicsInternal,
     runtime::Runtime,
-    surface::{Surface, SurfaceBackend, SurfaceInitialization, SurfaceProperties},
+    surface::{SurfaceBackend, SurfaceInitialization},
 };
 use core::{
     convert::TryInto,
     mem::MaybeUninit,
-    ops,
     ptr::{self, NonNull},
 };
 use cty::{c_int, c_long, c_uint, c_ulong};
-use x11nas::xlib::{self, Atom, Display, Window, XSetWindowAttributes, XWindowAttributes};
+use euclid::{Point2D, Size2D};
+use x11nas::xlib::{
+    self, Atom, Display, Window, XEvent, XExposeEvent, XGCValues, XSetWindowAttributes,
+    XWindowAttributes, XWindowChanges, _XGC, _XIC,
+};
 
 pub struct X11Surface {
     // pointer to the display
@@ -24,6 +31,12 @@ pub struct X11Surface {
     screen: c_int,
     // the window ID
     window: Window,
+    // pointer to the input context
+    input_context: NonNull<_XIC>,
+    // pointer to the graphics context
+    graphics_context: NonNull<_XGC>,
+    // pointer to the runtime
+    runtime: Runtime,
 }
 
 // helper function to set a text-based property for the window
@@ -63,6 +76,11 @@ impl X11Surface {
         self.window
     }
 
+    #[inline]
+    pub fn input_context(&self) -> NonNull<_XIC> {
+        self.input_context
+    }
+
     // create from surface properties
     pub(crate) fn new(runtime: &Runtime, props: &SurfaceInitialization) -> crate::Result<Self> {
         log::info!("Creating new X11Surface");
@@ -81,13 +99,20 @@ impl X11Surface {
         );
         let white_pixel =
             unsafe { xlib::XWhitePixel(xruntime.display().as_ptr(), screen.screen_id()) };
+        log::trace!(
+            "C function call: XBlackPixel({:p}, {})",
+            xruntime.display().as_ptr(),
+            screen.screen_id()
+        );
+        let black_pixel =
+            unsafe { xlib::XBlackPixel(xruntime.display().as_ptr(), screen.screen_id()) };
         log::trace!("Result of C function call: {}", white_pixel);
 
         log::trace!("Unsafe code: MaybeUninit for partial initialization of XSetWindowAttributes");
         let mut window_attrs: XSetWindowAttributes = XSetWindowAttributes {
             background_pixel: white_pixel,
             background_pixmap: 0,
-            border_pixel: white_pixel,
+            border_pixel: black_pixel,
             bit_gravity: xlib::NorthWestGravity,
             colormap: xruntime.default_colormap.unwrap(),
             //            override_redirect: xlib::True,
@@ -144,7 +169,21 @@ impl X11Surface {
 
         xruntime.push_error_trap();
 
-        log::trace!("C function call: XCreateWindow({:p}, {}, {}, {}, {}, {}, 1, {}, xlib::InputOutput, {:p}, {}, {:?})", xruntime.display().as_ptr(), xparent, x, y, props.width, props.height, visual.depth(), visual.visual().as_ptr(), attrs_mask, &window_attrs);
+        /*
+        log::trace!(
+            "C function call: XCreateWindow({:p}, {}, {}, {}, {}, {}, 1, {}, xlib::InputOutput, {:p}, {}, {:?})",
+            xruntime.display().as_ptr(),
+            xparent,
+            x,
+            y,
+            props.width,
+            props.height,
+            visual.depth(),
+            visual.visual().as_ptr(),
+            attrs_mask,
+            &window_attrs
+        );
+        */
         let window = unsafe {
             xlib::XCreateWindow(
                 xruntime.display().as_ptr(),
@@ -153,7 +192,7 @@ impl X11Surface {
                 y,
                 props.width,
                 props.height,
-                1,
+                0,
                 visual.depth(),
                 xlib::InputOutput as c_uint,
                 visual.visual().as_ptr(),
@@ -177,23 +216,77 @@ impl X11Surface {
             set_event_mask(*xruntime.display(), window, &props.event_mask)?;
         }
 
+        // create the input context
+        let xic = unsafe {
+            xlib::XCreateIC(
+                xruntime.input_method().as_ptr(),
+                xlib::XNInputStyle_0.as_ptr(),
+                xlib::XIMPreeditNothing | xlib::XIMStatusNothing,
+                xlib::XNClientWindow_0.as_ptr(),
+                window,
+                xlib::XNFocusWindow_0.as_ptr(),
+                window,
+                ptr::null_mut::<c_int>(),
+            )
+        };
+        let input_context = match NonNull::new(xic) {
+            Some(xic) => xic,
+            None => return Err(crate::X11Error::BadInputContext.into()),
+        };
+
+        unsafe { xlib::XSetICFocus(input_context.as_ptr()) };
+
+        // create the GC
+        log::debug!("Creating graphics context for window");
+        log::trace!(
+            "C function call: XCreateGC({:p}, {}, 0, null)",
+            xruntime.display().as_ptr(),
+            window
+        );
+        let gc =
+            unsafe { xlib::XCreateGC(xruntime.display().as_ptr(), window, 0, ptr::null_mut()) };
+        let graphics_context = match NonNull::new(gc) {
+            Some(gc) => gc,
+            None => return Err(crate::X11Error::BadGraphicsContext.into()),
+        };
+
         log::debug!("Mapping the window to ensure it's visible");
         log::trace!(
             "C function call: XMapRaised({:p}, {})",
             xruntime.display().as_ptr(),
             window
         );
-        unsafe { xlib::XMapRaised(xruntime.display().as_ptr(), window) };
+        x11_status_to_res(*xruntime.display(), unsafe {
+            xlib::XMapRaised(xruntime.display().as_ptr(), window)
+        })?;
 
         let surface = X11Surface {
             screen: screen.screen_id(),
             window,
             display: screen.display().clone(),
+            input_context,
+            graphics_context,
+            runtime: runtime.clone(),
         };
 
         log::debug!("Finished surface initialization, returning...");
 
         Ok(surface)
+    }
+
+    #[inline]
+    pub fn graphics_context(&self) -> NonNull<_XGC> {
+        self.graphics_context
+    }
+
+    #[inline]
+    pub fn display(&self) -> NonNull<Display> {
+        self.display
+    }
+
+    #[inline]
+    pub fn runtime(&self) -> &Runtime {
+        &self.runtime
     }
 }
 
@@ -208,7 +301,14 @@ fn set_event_mask(
     fn etm_to_x11(etm: EventTypeMask) -> Option<c_long> {
         Some(match etm {
             EventTypeMask::Resized => xlib::StructureNotifyMask,
-            EventTypeMask::Clicked => xlib::ButtonPressMask,
+            EventTypeMask::MouseDown => xlib::ButtonPressMask,
+            EventTypeMask::MouseUp => xlib::ButtonReleaseMask,
+            EventTypeMask::MouseEnterWindow => xlib::EnterWindowMask,
+            EventTypeMask::MouseExitWindow => xlib::LeaveWindowMask,
+            EventTypeMask::MouseMove => xlib::PointerMotionMask,
+            EventTypeMask::KeyDown => xlib::KeyPressMask,
+            EventTypeMask::KeyUp => xlib::KeyReleaseMask,
+            EventTypeMask::Paint => xlib::ExposureMask,
             _ => return None,
         })
     }
@@ -225,9 +325,31 @@ fn set_event_mask(
         window,
         mask
     );
-    unsafe { xlib::XSelectInput(dpy.as_ptr(), window, mask as _) };
+    x11_status_to_res(dpy, unsafe {
+        xlib::XSelectInput(dpy.as_ptr(), window, mask as _)
+    })?;
 
     Ok(())
+}
+
+macro_rules! set_window_attr {
+    ($self: expr, $field: ident, $val: expr, $mask: expr) => {{
+        let mut win_attrs = XSetWindowAttributes {
+            $field: ($val),
+            ..unsafe { MaybeUninit::uninit().assume_init() }
+        };
+
+        x11_status_to_res($self.display, unsafe {
+            xlib::XChangeWindowAttributes(
+                $self.display.as_ptr(),
+                $self.window,
+                ($mask),
+                &mut win_attrs,
+            )
+        })?;
+
+        Ok(())
+    }};
 }
 
 impl SurfaceBackend for X11Surface {
@@ -239,5 +361,84 @@ impl SurfaceBackend for X11Surface {
     #[inline]
     fn set_event_mask(&self, mask: &[EventTypeMask]) -> crate::Result<()> {
         set_event_mask(self.display, self.window, mask)
+    }
+
+    #[inline]
+    fn set_size(&self, width: u32, height: u32) -> crate::Result<()> {
+        log::trace!(
+            "C function call: XResizeWindow({:p}, {}, {}, {})",
+            self.display.as_ptr(),
+            self.window,
+            width,
+            height
+        );
+        x11_status_to_res(self.display, unsafe {
+            xlib::XResizeWindow(self.display.as_ptr(), self.window, width, height)
+        })?;
+        Ok(())
+    }
+
+    #[inline]
+    fn set_location(&self, x: i32, y: i32) -> crate::Result<()> {
+        log::trace!(
+            "C function call: XMoveWindow({:p}, {}, {}, {})",
+            self.display.as_ptr(),
+            self.window,
+            x,
+            y
+        );
+        x11_status_to_res(self.display, unsafe {
+            xlib::XMoveWindow(self.display.as_ptr(), self.window, x, y)
+        })?;
+        Ok(())
+    }
+
+    #[inline]
+    fn set_background_color(&self, clr: Rgba) -> crate::Result<()> {
+        // get color ID from runtime
+        let clr = self.runtime.as_x11().unwrap().color_id(clr)?;
+        x11_status_to_res(self.display, unsafe {
+            xlib::XSetWindowBackground(self.display.as_ptr(), self.window, clr)
+        })
+    }
+
+    #[inline]
+    fn set_border_color(&self, clr: Rgba) -> crate::Result<()> {
+        let clr = self.runtime.as_x11().unwrap().color_id(clr)?;
+        set_window_attr!(self, border_pixel, clr, xlib::CWBorderPixel)
+    }
+
+    #[inline]
+    fn set_border_width(&self, width: u32) -> crate::Result<()> {
+        let mut window_changes = XWindowChanges {
+            border_width: width.try_into()?,
+            ..unsafe { MaybeUninit::uninit().assume_init() }
+        };
+
+        x11_status_to_res(self.display, unsafe {
+            xlib::XConfigureWindow(
+                self.display.as_ptr(),
+                self.window,
+                xlib::CWBorderWidth.try_into().unwrap(),
+                &mut window_changes,
+            )
+        })
+    }
+
+    #[inline]
+    fn graphics_internal(&self) -> crate::Result<NonNull<dyn GraphicsInternal>> {
+        // SAFETY: we know Self is non-null
+        Ok(unsafe {
+            NonNull::new_unchecked(
+                self as *const Self as *const dyn GraphicsInternal as *mut dyn GraphicsInternal,
+            )
+        })
+    }
+
+    #[inline]
+    fn invalidate(&self, rectangle: Option<Rectangle>) -> crate::Result<()> {
+        x11_status_to_res(self.display, unsafe {
+            xlib::XClearArea(self.display.as_ptr(), self.window, 0, 0, 0, 0, xlib::True)
+        })
     }
 }

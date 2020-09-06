@@ -2,12 +2,8 @@
 
 use super::X11Monitor;
 use core::{mem::MaybeUninit, ptr::NonNull, slice};
-use cty::{c_int, c_long, c_void};
-#[cfg(feature = "alloc")]
-use hashbrown::HashSet;
+use cty::{c_int, c_void};
 use storagevec::StorageVec;
-#[cfg(not(feature = "alloc"))]
-use tinyvec::ArraySet;
 use x11nas::xlib::{self, Visual, XVisualInfo};
 
 #[derive(PartialEq, Eq, PartialOrd, Ord)]
@@ -152,7 +148,6 @@ impl X11Visual {
                     }
                 }
 
-                let depth = visual_info.depth;
                 Self::from_x11_visual_info(visual_info)
             })
             .collect::<crate::Result<_>>()?;

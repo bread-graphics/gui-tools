@@ -4,8 +4,9 @@
 
 use crate::{
     backend::{
+        select_backend,
         x11::{X11Runtime, X11_BACKEND},
-        Backend, BackendType, RuntimeInner, SurfaceInner,
+        Backend, BackendType, RuntimeInner,
     },
     event::{
         delivery::{DefaultEventDelivery, EventDelivery},
@@ -13,39 +14,63 @@ use crate::{
     },
     monitor::Monitor,
     mutex::{RwLockReadGuard, RwLockWriteGuard, ShimRwLock},
-    surface::{Surface, SurfaceInitialization, SurfaceProperties},
+    surface::{Surface, SurfaceInitialization},
 };
-use core::{cell::UnsafeCell, mem, ptr::NonNull};
-use owning_ref::{OwningRef, OwningRefMut};
-use spinning_top::Spinlock as Mutex;
+use core::{
+    mem,
+    sync::atomic::{AtomicBool, Ordering},
+};
+use owning_ref::OwningRef;
 use storagevec::{StorageMap, StorageVec};
 
-#[cfg(feature = "alloc")]
-use alloc::sync::Arc;
+#[cfg(not(feature = "alloc"))]
+use core::cell::UnsafeCell;
+#[cfg(not(feature = "alloc"))]
+use spinning_top::{Spinlock as Mutex, SpinlockGuard as MutexGuard};
 
-#[cfg(feature = "async")]
-use alloc::boxed::Box;
+#[cfg(feature = "alloc")]
+use alloc::{boxed::Box, sync::Arc};
+
 #[cfg(feature = "async")]
 use core::future::Future;
 
 // current internal runtime
-// used as a pointer to circumvent
-// allocation
+// used as a pointer to circumvent allocation
 #[cfg(not(feature = "alloc"))]
-static GLOBAL_RUNTIME: UnsafeCell<Option<ShimRwLock<RuntimeInternal>>> = UnsafeCell::new(None);
-#[cfg(not(feature = "alloc"))]
-static GLOBAL_RUNTIME_MUTEX: Mutex<()> = Mutex::new();
+struct GlobalRuntime(UnsafeCell<Option<ShimRwLock<RuntimeInternal>>>, Mutex<()>);
 
 #[cfg(not(feature = "alloc"))]
-#[inline]
-unsafe fn global_runtime() -> &'static Option<ShimRwLock<RuntimeInternal>> {
-    &*GLOBAL_RUNTIME.get()
+impl GlobalRuntime {
+    #[inline]
+    const fn new() -> Self {
+        Self(UnsafeCell::new(None), Mutex::new(()))
+    }
 }
 
 #[cfg(not(feature = "alloc"))]
-#[inline]
-unsafe fn global_runtime_mut() -> &'static mut Option<ShimRwLock<RuntimeInternal>> {
-    &mut *GLOBAL_RUNTIME.get()
+unsafe impl Send for GlobalRuntime {}
+#[cfg(not(feature = "alloc"))]
+unsafe impl Sync for GlobalRuntime {}
+
+#[cfg(not(feature = "alloc"))]
+static GLOBAL_RUNTIME: GlobalRuntime = GlobalRuntime::new();
+
+#[cfg(not(feature = "alloc"))]
+impl GlobalRuntime {
+    #[inline]
+    unsafe fn inner(&self) -> &Option<ShimRwLock<RuntimeInternal>> {
+        &*self.0.get()
+    }
+
+    #[inline]
+    unsafe fn inner_mut(&self) -> &mut Option<ShimRwLock<RuntimeInternal>> {
+        &mut *self.0.get()
+    }
+
+    #[inline]
+    unsafe fn get_lock(&self) -> MutexGuard<'_, ()> {
+        self.1.lock()
+    }
 }
 
 #[cfg(not(feature = "alloc"))]
@@ -66,8 +91,7 @@ fn new_inner_runtime(backend: Backend) -> crate::Result<RuntimeInternal> {
         peekers: StorageVec::new(),
         default_monitor,
         surfaces: StorageMap::new(),
-        events: Mutex::new(StorageVec::new()),
-        still_running: None,
+        suppress_peeker_loop: AtomicBool::new(backend.suppress_peeker_loop),
         #[cfg(feature = "async")]
         joiner: None,
         #[cfg(feature = "async")]
@@ -90,6 +114,25 @@ impl Clone for Runtime {
 // TODO: verify this
 unsafe impl Send for Runtime {}
 unsafe impl Sync for Runtime {}
+unsafe impl Send for RuntimeInternal {}
+unsafe impl Sync for RuntimeInternal {}
+
+#[derive(Clone)]
+pub(crate) enum Peeker {
+    Unowned(&'static dyn Fn(&Runtime, &Event) -> crate::Result<EventLoopAction>),
+    #[cfg(feature = "alloc")]
+    Owned(Arc<dyn Fn(&Runtime, &Event) -> crate::Result<EventLoopAction>>),
+}
+
+impl Peeker {
+    fn call(&self, runtime: &Runtime, event: &Event) -> crate::Result<EventLoopAction> {
+        match self {
+            Self::Unowned(f) => f(runtime, event),
+            #[cfg(feature = "alloc")]
+            Self::Owned(ref b) => b(runtime, event),
+        }
+    }
+}
 
 #[doc(hidden)]
 pub struct RuntimeInternal {
@@ -99,7 +142,7 @@ pub struct RuntimeInternal {
     delivery: DefaultEventDelivery,
 
     // people to inform of new events
-    peekers: StorageVec<&'static dyn Fn(&Runtime, &Event) -> crate::Result<EventLoopAction>, 5>,
+    peekers: StorageVec<Peeker, 5>,
 
     // the default monitor that windows are initially spawned on
     default_monitor: usize,
@@ -107,13 +150,8 @@ pub struct RuntimeInternal {
     // list of surfaces contained in the SysRuntime
     surfaces: StorageMap<usize, Surface, 25>,
 
-    // a list containing all of the current events
-    // TODO: make a stack-based queue structure at some point
-    events: Mutex<StorageVec<Event, 5>>,
-
-    // should the event loop continue running?
-    // None if the event loop hasn't started yet
-    still_running: Option<bool>,
+    // whether or not to suppress the peeker loop (i.e. it's already been run (i.e. win32))
+    suppress_peeker_loop: AtomicBool,
 
     // the currently joinable future that contains every
     // current event handler in a joiner structure
@@ -130,7 +168,7 @@ impl Runtime {
     #[cfg(not(feature = "alloc"))]
     #[inline]
     pub(crate) unsafe fn global() -> Self {
-        assert!(global_runtime().is_some());
+        assert!(GLOBAL_RUNTIME.inner().is_some());
         Self
     }
 
@@ -143,11 +181,12 @@ impl Runtime {
     #[cfg(not(feature = "alloc"))]
     #[inline]
     fn new_impl(backend: Backend) -> crate::Result<Self> {
-        let _spinny = GLOBAL_RUNTIME_MUTEX.lock();
+        let _spinny = unsafe { GLOBAL_RUNTIME.get_lock() };
 
         // SAFETY: we have the spinny lock, we have exclusive access to the unsafe cell
-        if let None = unsafe { global_runtime() } {
-            *unsafe { global_runtime_mut() } = Some(new_inner_runtime(backend)?);
+        if let None = unsafe { GLOBAL_RUNTIME.inner() } {
+            *unsafe { GLOBAL_RUNTIME.inner_mut() } =
+                Some(ShimRwLock::new(new_inner_runtime(backend)?));
         } else {
             return Err(crate::Error::RuntimeDuplication);
         }
@@ -158,7 +197,11 @@ impl Runtime {
     /// Create a new runtime.
     #[inline]
     pub fn new() -> crate::Result<Self> {
-        let this = Self::new_impl(X11_BACKEND)?;
+        let backend = match select_backend() {
+            Some(backend) => backend,
+            None => return Err(crate::Error::NoBackendFound),
+        };
+        let this = Self::new_impl(backend)?;
 
         if let BackendType::X11 = this.ty() {
             crate::backend::x11::x11displaymanager::set_runtime(
@@ -179,7 +222,7 @@ impl Runtime {
     #[inline]
     fn inner(&self) -> RwLockReadGuard<'_, RuntimeInternal> {
         // SAFETY: the only time global_runtime_mut is called is during initialization
-        unsafe { global_runtime() }.as_ref().unwrap().read()
+        unsafe { GLOBAL_RUNTIME.inner() }.as_ref().unwrap().read()
     }
 
     #[cfg(feature = "alloc")]
@@ -192,7 +235,7 @@ impl Runtime {
     #[inline]
     fn inner_locked(&self) -> RwLockWriteGuard<'_, RuntimeInternal> {
         // SAFETY: same as above
-        unsafe { global_runtime() }.as_ref().unwrap().write()
+        unsafe { GLOBAL_RUNTIME.inner() }.as_ref().unwrap().write()
     }
 
     #[inline]
@@ -210,22 +253,6 @@ impl Runtime {
     }
 
     #[inline]
-    pub(crate) fn as_x11_mut(
-        &self,
-    ) -> Option<OwningRefMut<RwLockWriteGuard<'_, RuntimeInternal>, X11Runtime>> {
-        let inner = self.inner_locked();
-        match inner.sys.as_x11() {
-            Some(_) => Some(
-                OwningRefMut::new(inner).map_mut(|ri| match ri.sys.as_x11_mut() {
-                    Some(x) => x,
-                    None => unreachable!(),
-                }),
-            ),
-            None => None,
-        }
-    }
-
-    #[inline]
     pub fn default_monitor_index(&self) -> usize {
         self.inner().default_monitor
     }
@@ -237,7 +264,7 @@ impl Runtime {
     }
 
     #[inline]
-    pub(crate) fn surface_at(
+    pub fn surface_at(
         &self,
         id: usize,
     ) -> Option<OwningRef<RwLockReadGuard<'_, RuntimeInternal>, Surface>> {
@@ -266,14 +293,8 @@ impl Runtime {
 
     /// The backend assocaited with this item.
     #[inline]
-    pub fn backend(&self) -> OwningRef<RwLockReadGuard<'_, RuntimeInternal>, Backend> {
+    pub(crate) fn backend(&self) -> OwningRef<RwLockReadGuard<'_, RuntimeInternal>, Backend> {
         OwningRef::new(self.inner()).map(|ri| &ri.backend)
-    }
-
-    /// Serve events.
-    #[inline]
-    pub(crate) fn serve_event(&self) -> crate::Result<StorageVec<Event, 5>> {
-        self.inner().sys.serve_event(self)
     }
 
     /// Dispatch events.
@@ -287,6 +308,20 @@ impl Runtime {
         }
     }
 
+    #[inline]
+    pub(crate) fn peeker_loop(&self, peekers: &[Peeker], event: &Event) -> crate::Result<bool> {
+        let mut peekers_iter = peekers.iter();
+        while let Some(peek) = peekers_iter.next() {
+            match peek.call(self, event) {
+                Err(e) => return Err(e),
+                Ok(EventLoopAction::Break) => return Ok(false),
+                Ok(EventLoopAction::Continue) => (),
+            }
+        }
+
+        Ok(true)
+    }
+
     /// Run an iteration of the event loop.
     #[inline]
     pub fn run_iteration(&self) -> crate::Result<bool> {
@@ -295,37 +330,33 @@ impl Runtime {
         let mut inner = Some(self.inner_locked());
         let ev = match inner.as_mut().unwrap().delivery.pop_event() {
             Some(ev) => ev,
-            None => {
-                mem::drop(inner.take()); // drop the write lock so we don't contest the process
-
-                
-                loop {
-                    let inner_read = self.inner(); 
-                    if inner_read.delivery.pending() { break; }
-
-                    log::debug!("Querying system for new events...");
-                    let served = inner_read.sys.serve_event(self)?;
-                    mem::drop(inner_read);
-                    self.inner_locked().delivery.add_events(served);
+            None => loop {
+                if let Some(ev) = inner.as_mut().unwrap().delivery.pop_event() {
+                    break ev;
                 }
+                mem::drop(inner.take());
 
+                log::debug!("Querying system for new events...");
+                let served = self.inner().sys.serve_event(self)?;
                 inner = Some(self.inner_locked());
-                inner.as_mut().unwrap().delivery.pop_event().unwrap()
-            }
+                inner.as_mut().unwrap().delivery.add_events(served);
+            },
         };
+        log::debug!("Running iteration on event {:?}", &ev);
 
         // clone the peekers out while we have the lock
         let peekers = inner.as_mut().unwrap().peekers.clone();
+        let suppress_peeker_loop = inner
+            .as_ref()
+            .unwrap()
+            .suppress_peeker_loop
+            .load(Ordering::Acquire);
 
         mem::drop(inner);
 
-        log::trace!("There is {} peekers", peekers.len());
-        let mut peekers_iter = peekers.into_iter();
-        while let Some(peek) = peekers_iter.next() {
-            match peek(self, &ev) {
-                Err(e) => return Err(e),
-                Ok(EventLoopAction::Break) => return Ok(false),
-                Ok(EventLoopAction::Continue) => (),
+        if !suppress_peeker_loop {
+            if !self.peeker_loop(&peekers, &ev)? {
+                return Ok(false);
             }
         }
 
@@ -334,8 +365,24 @@ impl Runtime {
 
     /// Add a peeker to this runtime.
     #[inline]
-    pub fn add_peeker(&self, peeker: &'static dyn Fn(&Runtime, &Event) -> crate::Result<EventLoopAction>) {
-        self.inner_locked().peekers.push(peeker)
+    pub fn add_peeker(
+        &self,
+        peeker: &'static dyn Fn(&Runtime, &Event) -> crate::Result<EventLoopAction>,
+    ) {
+        self.inner_locked().peekers.push(Peeker::Unowned(peeker))
+    }
+
+    /// Add an owned peeker to this runtime.
+    #[cfg(feature = "alloc")]
+    #[inline]
+    pub fn add_peeker_owned<F>(&self, peeker: F)
+    where
+        F: Fn(&Runtime, &Event) -> crate::Result<EventLoopAction> + 'static,
+    {
+        self.inner_locked().peekers.push(Peeker::Owned(
+            (Box::new(peeker) as Box<dyn Fn(&Runtime, &Event) -> crate::Result<EventLoopAction>>)
+                .into(),
+        ))
     }
 
     /// Run this event loop.

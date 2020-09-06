@@ -1,7 +1,5 @@
 // MIT/Apache2 License
 
-use core::convert::TryInto;
-
 /// The starting point for a window.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum StartingPoint {

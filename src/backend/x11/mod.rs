@@ -2,6 +2,7 @@
 
 pub mod visual;
 pub(crate) mod x11displaymanager;
+pub mod x11drawable;
 mod x11error;
 mod x11event;
 mod x11monitor;
@@ -9,7 +10,6 @@ mod x11runtime;
 mod x11surface;
 
 pub use x11error::*;
-pub use x11event::*;
 pub use x11monitor::*;
 pub use x11runtime::*;
 pub use x11surface::*;
@@ -29,4 +29,9 @@ fn surface_function(
     Ok(SurfaceInner::X11(X11Surface::new(runtime, props)?))
 }
 
-pub const X11_BACKEND: Backend = Backend::new(BackendType::X11, &open_function, &surface_function);
+pub(crate) const X11_BACKEND: Backend =
+    Backend::new(BackendType::X11, &open_function, &surface_function);
+
+pub(crate) fn x11_backend_selector() -> Option<Backend> {
+    Some(X11_BACKEND)
+}

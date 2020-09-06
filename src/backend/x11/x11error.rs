@@ -1,6 +1,6 @@
 // MIT/Apache2 License
 
-use super::{x11displaymanager, X11Runtime};
+use super::x11displaymanager;
 use crate::X11Error;
 use core::ptr::NonNull;
 use cty::{c_char, c_int, c_uchar, c_ulong};
@@ -25,7 +25,7 @@ pub struct X11ErrorData {
 fn error_data_to_error(ed: X11ErrorData, display: NonNull<Display>) -> X11Error {
     X11Error::ErrorEventThrown {
         serial: ed.serial,
-        error_code: ed.error_code,
+        error_code: ed.error_code.into(),
         request_code: ed.request_code,
         minor_code: ed.minor_code,
     }
@@ -66,6 +66,7 @@ fn error_data_to_error(ed: X11ErrorData, display: NonNull<Display>) -> X11Error 
 }
 
 impl X11ErrorData {
+    #[inline]
     fn to_error(self, display: NonNull<Display>) -> crate::Error {
         error_data_to_error(self, display).into()
     }
@@ -156,7 +157,7 @@ unsafe extern "C" fn x11_error_handler(dpy: *mut Display, error: *mut XErrorEven
             return 0;
         }
     };
-    let err = unsafe { error_event.as_ref() };
+    let err = error_event.as_ref();
 
     let error_data = X11ErrorData {
         serial: err.serial,

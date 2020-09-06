@@ -5,11 +5,15 @@ use alloc::boxed::Box;
 
 use super::x11::{X11Runtime, X11Surface};
 use crate::{
+    color::Rgba,
     event::{Event, EventTypeMask},
+    geometry::Rectangle,
+    graphics::GraphicsInternal,
     monitor::Monitor,
     runtime::{Runtime, RuntimeBackend},
-    surface::{SurfaceBackend, SurfaceProperties},
+    surface::SurfaceBackend,
 };
+use core::ptr::NonNull;
 use storagevec::StorageVec;
 
 pub enum RuntimeInner {
@@ -85,15 +89,6 @@ impl SurfaceInner {
     }
 
     #[inline]
-    fn generic_mut(&mut self) -> &mut dyn SurfaceBackend {
-        match self {
-            Self::X11(ref mut x) => x,
-            #[cfg(feature = "alloc")]
-            Self::Other(ref mut b) => &mut **b,
-        }
-    }
-
-    #[inline]
     pub fn as_x11(&self) -> Option<&X11Surface> {
         match self {
             Self::X11(ref x) => Some(x),
@@ -111,5 +106,40 @@ impl SurfaceBackend for SurfaceInner {
     #[inline]
     fn set_event_mask(&self, mask: &[EventTypeMask]) -> crate::Result<()> {
         self.generic().set_event_mask(mask)
+    }
+
+    #[inline]
+    fn set_size(&self, width: u32, height: u32) -> crate::Result<()> {
+        self.generic().set_size(width, height)
+    }
+
+    #[inline]
+    fn set_location(&self, x: i32, y: i32) -> crate::Result<()> {
+        self.generic().set_location(x, y)
+    }
+
+    #[inline]
+    fn set_background_color(&self, clr: Rgba) -> crate::Result<()> {
+        self.generic().set_background_color(clr)
+    }
+
+    #[inline]
+    fn set_border_color(&self, clr: Rgba) -> crate::Result<()> {
+        self.generic().set_border_color(clr)
+    }
+
+    #[inline]
+    fn set_border_width(&self, width: u32) -> crate::Result<()> {
+        self.generic().set_border_width(width)
+    }
+
+    #[inline]
+    fn graphics_internal(&self) -> crate::Result<NonNull<dyn GraphicsInternal>> {
+        self.generic().graphics_internal()
+    }
+
+    #[inline]
+    fn invalidate(&self, rect: Option<Rectangle>) -> crate::Result<()> {
+        self.generic().invalidate(rect)
     }
 }

@@ -1,24 +1,23 @@
 // MIT/Apache2 License
 
-use super::{X11ErrorTrap, X11Monitor, X11Surface};
+use super::{X11ErrorTrap, X11Monitor};
+use crate::error::x11_status_to_res;
 use crate::{
-    backend::SurfaceInner,
+    color::Rgba,
     error::X11Error,
     event::Event,
     monitor::Monitor,
-    mutex::{MutexGuard, ShimMutex as Mutex},
+    mutex::{MutexGuard, ShimMutex as Mutex, ShimRwLock as RwLock},
     runtime::{Runtime, RuntimeBackend},
-    surface::{Surface, SurfaceProperties},
 };
 use core::{
     convert::TryInto,
     mem::{self, MaybeUninit},
     ptr::{self, NonNull},
 };
-use cstr_core::{c_char, CStr};
-use cty::c_int;
+use cty::{c_char, c_int, c_ulong, c_ushort};
 use storagevec::{StorageMap, StorageVec};
-use x11nas::xlib::{self, Atom, Colormap, Display, Visual, Window as WindowID};
+use x11nas::xlib::{self, Atom, Colormap, Display, Visual, XColor, _XIM};
 
 #[cfg(feature = "async")]
 use core::task::Waker;
@@ -35,7 +34,7 @@ pub enum X11Atom {
 }
 
 const X11_ATOMS_LEN: usize = 2;
-const X11_ATOMS: [X11Atom; X11_ATOMS_LEN] = [X11Atom::WmDeleteWindow, X11Atom::WmName];
+//const X11_ATOMS: [X11Atom; X11_ATOMS_LEN] = [X11Atom::WmDeleteWindow, X11Atom::WmName];
 const X11_ATOMS_NAMES: [*const c_char; X11_ATOMS_LEN] = [
     // SAFETY: all of these are valid CStrings
     b"WM_DELETE_WINDOW\0" as *const _ as *const c_char,
@@ -64,6 +63,15 @@ pub struct X11Runtime {
 
     // trap for errors
     error_trap: Mutex<X11ErrorTrap>,
+
+    // input method
+    input_method: NonNull<_XIM>,
+
+    // map of colors to colormap ids
+    color_ids: RwLock<StorageMap<Rgba, c_ulong, 100>>,
+
+    // default monitor ID
+    default_monitor: c_int,
 }
 
 impl X11Runtime {
@@ -71,6 +79,7 @@ impl X11Runtime {
     pub fn new() -> crate::Result<(usize, Self)> {
         log::info!("Creating a new X11 runtime");
 
+        // the status of this function is ignored
         log::trace!("C function call: XInitThreads()");
         unsafe { xlib::XInitThreads() };
 
@@ -84,6 +93,51 @@ impl X11Runtime {
         let display = match NonNull::new(display_ptr) {
             Some(dpy) => dpy,
             None => return Err(X11Error::DisplayDidntOpen.into()),
+        };
+
+        // create the input method
+        log::debug!("Creating the input method");
+        log::trace!("C function call: XSetLocaleModifiers(&0)");
+        unsafe { xlib::XSetLocaleModifiers(&mut 0) };
+
+        log::trace!(
+            "C function call: XOpenIM({:p}, null, null, null)",
+            display_ptr
+        );
+        let xim = unsafe {
+            xlib::XOpenIM(
+                display.as_ptr(),
+                ptr::null_mut(),
+                ptr::null_mut(),
+                ptr::null_mut(),
+            )
+        };
+        log::trace!("Result of C function call: {:p}", xim);
+        let input_method = match NonNull::new(xim) {
+            Some(xim) => xim,
+            None => {
+                // try again, but fallback to the internal IM
+                log::debug!("Falling back to internal input method");
+                log::trace!("C function call: XSetLocaleModifiers(b\"@im=none\\0\")");
+                unsafe { xlib::XSetLocaleModifiers(b"@im=none\0".as_ptr() as *mut c_char) };
+
+                log::trace!(
+                    "C function call: XOpenIM({:p}, null, null, null)",
+                    display_ptr
+                );
+                let xim = unsafe {
+                    xlib::XOpenIM(
+                        display.as_ptr(),
+                        ptr::null_mut(),
+                        ptr::null_mut(),
+                        ptr::null_mut(),
+                    )
+                };
+                match NonNull::new(xim) {
+                    Some(xim) => xim,
+                    None => return Err(X11Error::BadInputMethod.into()),
+                }
+            }
         };
 
         // query for internal atoms
@@ -132,6 +186,9 @@ impl X11Runtime {
             default_visual: None,
             default_depth: None,
             error_trap: Mutex::new(X11ErrorTrap::new()),
+            input_method,
+            color_ids: RwLock::new(StorageMap::new()),
+            default_monitor: default_screen,
         };
 
         // SAFETY: C function that returns an integer, we check it for validity
@@ -192,8 +249,55 @@ impl X11Runtime {
     }
 
     #[inline]
+    pub fn input_method(&self) -> NonNull<_XIM> {
+        self.input_method
+    }
+
+    #[inline]
     pub fn internal_atom(&self, name: X11Atom) -> xlib::Atom {
         self.internal_atoms[name as usize]
+    }
+
+    /// Set up a color with a color ID.
+    #[inline]
+    pub(crate) fn color_id(&self, clr: Rgba) -> crate::Result<c_ulong> {
+        use crate::color::colors;
+
+        const ALL_COLOR_ELEMENTS: c_char = xlib::DoRed | xlib::DoGreen | xlib::DoBlue;
+
+        // short circuit evaluation for if we have black or white pixels
+        if clr == colors::BLACK {
+            return Ok(unsafe { xlib::XBlackPixel(self.display().as_ptr(), self.default_monitor) });
+        } else if clr == colors::WHITE {
+            return Ok(unsafe { xlib::XWhitePixel(self.display().as_ptr(), self.default_monitor) });
+        }
+
+        let color_ids = self.color_ids.read();
+        match color_ids.get(&clr) {
+            Some(id) => Ok(*id),
+            None => {
+                let (red, green, blue, _) = clr.convert_elements::<c_ushort>();
+                let mut xcolor = XColor {
+                    red,
+                    green,
+                    blue,
+                    flags: ALL_COLOR_ELEMENTS,
+                    ..unsafe { MaybeUninit::zeroed().assume_init() }
+                };
+                unsafe {
+                    xlib::XAllocColor(
+                        self.display.as_ptr(),
+                        self.default_colormap.unwrap(),
+                        &mut xcolor,
+                    )
+                };
+                mem::drop(color_ids);
+
+                let mut color_ids = self.color_ids.write();
+                color_ids.insert(clr, xcolor.pixel);
+                Ok(xcolor.pixel)
+            }
+        }
     }
 }
 
@@ -206,10 +310,12 @@ impl RuntimeBackend for X11Runtime {
             "C function call: XNextEvent({:p}, [buffer])",
             self.display().as_ptr()
         );
-        unsafe { xlib::XNextEvent(self.display().as_ptr(), event.as_mut_ptr()) };
+        x11_status_to_res(*self.display(), unsafe {
+            xlib::XNextEvent(self.display().as_ptr(), event.as_mut_ptr())
+        })?;
         log::trace!("Finished C function call");
 
-        super::translate_x11_event(self, real, unsafe { MaybeUninit::assume_init(event) })
+        super::x11event::translate_x11_event(self, real, unsafe { MaybeUninit::assume_init(event) })
     }
 
     #[inline]

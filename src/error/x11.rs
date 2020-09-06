@@ -1,11 +1,13 @@
 // MIT/Apache2 License
 
-use core::fmt;
-use cty::{c_int, c_uchar, c_ulong};
+use core::{fmt, ptr::NonNull};
+use cty::{c_char, c_int, c_uchar, c_ulong};
+use x11nas::xlib;
 
 #[cfg(feature = "alloc")]
-use alloc::string::String;
+use alloc::{string::String, vec::Vec};
 
+/// A container type for X11-related errors.
 #[derive(Debug)]
 pub enum X11Error {
     DisplayDidntOpen,
@@ -16,12 +18,21 @@ pub enum X11Error {
     BadVisualColorType(c_int),
     BadGetVisualInfo,
     BadDefaultVisual,
+    BadInputMethod,
+    BadInputContext,
+    BadGraphicsContext,
+    NoKeysymFound,
     ErrorEventThrown {
         serial: c_ulong,
         error_code: c_ulong,
         request_code: c_uchar,
         minor_code: c_uchar,
 
+        #[cfg(feature = "alloc")]
+        error_description: String,
+    },
+    Status {
+        code: c_int,
         #[cfg(feature = "alloc")]
         error_description: String,
     },
@@ -51,10 +62,57 @@ impl fmt::Display for X11Error {
                 f.write_str("The XGetVisualInfo() function returned a null pointer")
             }
             Self::BadDefaultVisual => f.write_str("The default visual type pointer was null"),
+            Self::BadInputMethod => f.write_str("The input method was null"),
+            Self::BadInputContext => f.write_str("The input context was null"),
+            Self::BadGraphicsContext => f.write_str("The graphics context for a window was null"),
+            Self::NoKeysymFound => f.write_str("The input event did not contain a key symbol"),
+            #[cfg(not(feature = "alloc"))]
+            Self::Status { code } => write!(f, "An X11 function failed with status {}", code),
+            #[cfg(feature = "alloc")]
+            Self::Status { code, ref error_description } => write!(f, "An X11 function failed with status {}: {}", code, error_description),
             #[cfg(not(feature = "alloc"))]
             Self::ErrorEventThrown { serial, error_code, request_code, minor_code } => write!(f, "An X11 internal error occurred (serial: {} - error code: {} - request code: {} - minor code: {})", serial, error_code, request_code, minor_code),
             #[cfg(feature = "alloc")]
-            Self::ErrorEventThrown { serial, error_code, request_code, minor_code, ref error_description } => write!(f, "An X11 internal error occurred: {} (serial: {} - error code: {} - request code: {} - minor code: {})", error_description, serial, error_code, request_code, minor_code),
+            Self::ErrorEventThrown { serial, error_code, request_code, minor_code, ref error_description } => write!(f, "An X11 internal error occurred: {} (serial: {} - error code: {} - request code: {} - minor code: {})", error_description, serial, error_code, request_code, minor_code),            
         }
+    }
+}
+
+// convert a status to an x11 error
+#[cfg(not(feature = "alloc"))]
+#[inline]
+fn x11_status_to_err(_dpy: NonNull<xlib::Display>, status: c_int) -> crate::Error {
+    X11Error::Status { code: status }.into()
+}
+
+#[cfg(feature = "alloc")]
+#[inline]
+fn x11_status_to_err(dpy: NonNull<xlib::Display>, status: c_int) -> crate::Error {
+    const BUFFER_SIZE: usize = 100;
+    let mut buffer: [c_char; BUFFER_SIZE] = [0; BUFFER_SIZE];
+
+    let len = unsafe {
+        xlib::XGetErrorText(
+            dpy.as_ptr(),
+            status,
+            buffer.as_mut_ptr(),
+            BUFFER_SIZE as c_int - 1,
+        )
+    } as usize;
+
+    X11Error::Status {
+        code: status,
+        error_description: String::from_utf8(buffer[0..len].iter().map(|i| *i as _).collect())
+            .unwrap(),
+    }
+    .into()
+}
+
+#[inline]
+pub(crate) fn x11_status_to_res(dpy: NonNull<xlib::Display>, status: c_int) -> crate::Result<()> {
+    if status == 1 || status == 0 {
+        Ok(())
+    } else {
+        Err(x11_status_to_err(dpy, status))
     }
 }
