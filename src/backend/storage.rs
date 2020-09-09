@@ -3,7 +3,10 @@
 #[cfg(feature = "alloc")]
 use alloc::boxed::Box;
 
-use super::x11::{X11Runtime, X11Surface};
+use super::{
+    win32::{Win32Runtime, Win32Surface},
+    x11::{X11Runtime, X11Surface},
+};
 use crate::{
     color::Rgba,
     event::{Event, EventTypeMask},
@@ -18,6 +21,7 @@ use storagevec::StorageVec;
 
 pub enum RuntimeInner {
     X11(X11Runtime),
+    Win32(Win32Runtime),
     #[cfg(feature = "alloc")]
     Other(Box<dyn RuntimeBackend>),
 }
@@ -27,6 +31,7 @@ impl RuntimeInner {
     fn generic(&self) -> &dyn RuntimeBackend {
         match self {
             Self::X11(ref x) => x as _,
+            Self::Win32(ref w) => w as _,
             #[cfg(feature = "alloc")]
             Self::Other(ref b) => &**b,
         }
@@ -44,6 +49,14 @@ impl RuntimeInner {
     pub fn as_x11_mut(&mut self) -> Option<&mut X11Runtime> {
         match self {
             Self::X11(ref mut x) => Some(x),
+            _ => None,
+        }
+    }
+
+    #[inline]
+    pub fn as_win32(&self) -> Option<&Win32Runtime> {
+        match self {
+            Self::Win32(ref w) => Some(w),
             _ => None,
         }
     }
@@ -74,6 +87,7 @@ impl RuntimeBackend for RuntimeInner {
 
 pub enum SurfaceInner {
     X11(X11Surface),
+    Win32(Win32Surface),
     #[cfg(feature = "alloc")]
     Other(Box<dyn SurfaceBackend>),
 }
@@ -83,6 +97,7 @@ impl SurfaceInner {
     fn generic(&self) -> &dyn SurfaceBackend {
         match self {
             Self::X11(ref x) => x,
+            Self::Win32(ref w) => w,
             #[cfg(feature = "alloc")]
             Self::Other(ref b) => &**b,
         }
@@ -92,6 +107,14 @@ impl SurfaceInner {
     pub fn as_x11(&self) -> Option<&X11Surface> {
         match self {
             Self::X11(ref x) => Some(x),
+            _ => None,
+        }
+    }
+
+    #[inline]
+    pub fn as_win32(&self) -> Option<&Win32Surface> {
+        match self {
+            Self::Win32(ref w) => Some(w),
             _ => None,
         }
     }

@@ -130,7 +130,10 @@ where
     #[inline]
     fn color_at_flat(&self, index: usize) -> Option<Rgba> {
         #[inline]
-        fn element_at<T: AsPrimitive<f32> + Bounded + Div>(data: &[T], index: usize) -> Option<f32> {
+        fn element_at<T: AsPrimitive<f32> + Bounded + Div>(
+            data: &[T],
+            index: usize,
+        ) -> Option<f32> {
             match data.get(index) {
                 None => None,
                 Some(item) => Some(item.as_() / T::max_value().as_()),
@@ -200,6 +203,23 @@ impl<T: 'static> Image<T> {
             None
         } else {
             Some(unsafe { Self::from_elements_unchecked(data, width, height, color_space) })
+        }
+    }
+
+    // TODO: rewrite if higher kinded generics ever become a thing
+    #[cfg(feature = "alloc")]
+    #[inline]
+    pub unsafe fn from_elements_arc_unchecked(
+        data: Arc<[T]>,
+        width: usize,
+        height: usize,
+        color_space: ColorSpace,
+    ) -> Self {
+        Self {
+            data: ImageData::OwnedPointer(data),
+            size: Size2D::new(width, height),
+            color_space,
+            id: NEXT_IMAGE_ID.fetch_add(1, Ordering::Acquire),
         }
     }
 

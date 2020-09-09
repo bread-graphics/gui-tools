@@ -1,5 +1,7 @@
 // MIT/Apache2 License
 
+#![cfg(target_os = "linux")]
+
 pub mod visual;
 pub(crate) mod x11displaymanager;
 pub mod x11drawable;
@@ -29,8 +31,16 @@ fn surface_function(
     Ok(SurfaceInner::X11(X11Surface::new(runtime, props)?))
 }
 
-pub(crate) const X11_BACKEND: Backend =
-    Backend::new(BackendType::X11, &open_function, &surface_function);
+fn register_function(runtime: &Runtime) {
+    x11displaymanager::set_runtime(runtime.as_x11().unwrap().display().clone(), runtime.clone());
+}
+
+pub(crate) const X11_BACKEND: Backend = Backend::new(
+    BackendType::X11,
+    &open_function,
+    &register_function,
+    &surface_function,
+);
 
 pub(crate) fn x11_backend_selector() -> Option<Backend> {
     Some(X11_BACKEND)

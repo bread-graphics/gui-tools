@@ -19,20 +19,21 @@ ordered-float = "2.0.0"
 owning_ref = "0.4.1"
 spinning_top = { version = "0.2.2", features = ["nightly", "owning_ref"] }
 spinny = { version = "0.2.0", features = ["nightly", "owning_ref"] }
-storagevec = { version = "0.1.2", default-features = false }
+storagevec = { version = "0.1.4", default-features = false }
 tokio = { version = "0.2.22", features = ["rt-core"], optional = true }
 
 [dev-dependencies]
+conquer-once = "0.2.1"
 env_logger = "0.7.1"
 
-[dependencies.x11nas]
+[target.'cfg(target_os = "linux")'.dependencies.x11nas]
 version = "2.19.0"
 features = ["xlib"]
 default-features = false
 
 [target.'cfg(windows)'.dependencies.winapi]
 version = "0.3.9"
-features = ["libloaderapi", "minwindef"]
+features = ["libloaderapi", "minwindef", "windef", "errhandlingapi", "winuser", "ntdef"]
 
 [features]
 default = ["std"]

@@ -344,8 +344,10 @@ impl KeyInfo {
     }
 }
 
+#[cfg(target_os = "linux")]
 mod x11_keysym_table;
 
+#[cfg(target_os = "linux")]
 impl KeyType {
     pub(crate) fn from_x11(xkey: x11nas::xlib::KeySym) -> Self {
         use x11_keysym_table::X11_KEYSYM_TABLE;

@@ -5,6 +5,7 @@
 use crate::{
     backend::{
         select_backend,
+        win32::Win32Runtime,
         x11::{X11Runtime, X11_BACKEND},
         Backend, BackendType, RuntimeInner,
     },
@@ -75,7 +76,9 @@ impl GlobalRuntime {
 
 #[cfg(not(feature = "alloc"))]
 /// The runtime for the GUI engine.
-pub struct Runtime;
+pub struct Runtime {
+    _private: (),
+}
 
 #[cfg(feature = "alloc")]
 #[repr(transparent)]
@@ -169,7 +172,7 @@ impl Runtime {
     #[inline]
     pub(crate) unsafe fn global() -> Self {
         assert!(GLOBAL_RUNTIME.inner().is_some());
-        Self
+        Self { _private: () }
     }
 
     #[cfg(feature = "alloc")]
@@ -191,7 +194,7 @@ impl Runtime {
             return Err(crate::Error::RuntimeDuplication);
         }
 
-        Ok(Self)
+        Ok(Self { _private: () })
     }
 
     /// Create a new runtime.
@@ -201,15 +204,43 @@ impl Runtime {
             Some(backend) => backend,
             None => return Err(crate::Error::NoBackendFound),
         };
+        Self::from_backend(backend)
+    }
+
+    /// Create a new runtime from a specific backend.
+    #[inline]
+    pub fn from_backend(backend: Backend) -> crate::Result<Self> {
         let this = Self::new_impl(backend)?;
 
-        if let BackendType::X11 = this.ty() {
-            crate::backend::x11::x11displaymanager::set_runtime(
-                this.as_x11().unwrap().display().clone(),
-                this.clone(),
-            );
-        }
+        // register w/ the backend
+        backend.register(&this);
+
         Ok(this)
+    }
+
+    #[inline]
+    #[cfg(feature = "alloc")]
+    pub(crate) fn into_ptr(self) -> *const ShimRwLock<RuntimeInternal> {
+        Arc::into_raw(self.0)
+    }
+
+    #[inline]
+    #[cfg(not(feature = "alloc"))]
+    pub(crate) fn into_ptr(self) -> *const ShimRwLock<RuntimeInernal> {
+        unsafe { GLOBAL_RUNTIME.inner() }.as_ref().unwrap()
+    }
+
+    #[inline]
+    #[cfg(feature = "alloc")]
+    pub(crate) unsafe fn from_ptr(ptr: *const ShimRwLock<RuntimeInternal>) -> Self {
+        Self(Arc::from_raw(ptr))
+    }
+
+    #[inline]
+    #[cfg(not(feature = "alloc"))]
+    pub(crate) unsafe fn from_ptr(ptr: *const ShimRwLock<RuntimeInternal>) -> Self {
+        assert!(ptr as *const _ == GLOBAL_RUNTIME.inner().as_ref().unwrap() as *const _);
+        Self { private: () }
     }
 
     #[cfg(feature = "alloc")]
@@ -249,6 +280,20 @@ impl Runtime {
                 None => unreachable!(),
             })),
             None => None,
+        }
+    }
+
+    #[inline]
+    pub(crate) fn as_win32(
+        &self,
+    ) -> Option<OwningRef<RwLockReadGuard<'_, RuntimeInternal>, Win32Runtime>> {
+        let inner = self.inner();
+        match inner.backend.ty() {
+            BackendType::Win32 => Some(OwningRef::new(inner).map(|ri| match ri.sys.as_win32() {
+                Some(w) => w,
+                None => unreachable!(),
+            })),
+            _ => None,
         }
     }
 
@@ -293,7 +338,7 @@ impl Runtime {
 
     /// The backend assocaited with this item.
     #[inline]
-    pub(crate) fn backend(&self) -> OwningRef<RwLockReadGuard<'_, RuntimeInternal>, Backend> {
+    pub fn backend(&self) -> OwningRef<RwLockReadGuard<'_, RuntimeInternal>, Backend> {
         OwningRef::new(self.inner()).map(|ri| &ri.backend)
     }
 
