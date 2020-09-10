@@ -21,6 +21,8 @@ pub unsafe extern "system" fn window_procedure(
     wparam: WPARAM,
     lparam: LPARAM,
 ) -> LRESULT {
+    log::debug!("Running window procedure with HWND {:p}", hwnd);
+
     // if hwnd is not a window, return to its default window procedure
     if IsWindow(hwnd) == FALSE {
         log::warn!(
@@ -32,6 +34,7 @@ pub unsafe extern "system" fn window_procedure(
     // if this is WM_NCCREATE, the window is being created for the first time. this means that the lparam
     // should contain a pointer to our runtime. We can set that to the GWLP_USERDATA variable
     if msg == WM_NCCREATE {
+        log::debug!("Running creation procedure...");
         let create_struct_ptr = mem::transmute::<LPARAM, LPCREATESTRUCTA>(lparam);
         // the lpCreateParams should be a pointer
         let window_object_ptr = (*create_struct_ptr).lpCreateParams;
@@ -85,8 +88,10 @@ pub unsafe extern "system" fn window_procedure(
     }
 
     // transmute the win32 pointer to the Arc pointer we encoded into it
-    let runtime = mem::transmute::<LONG_PTR, *const ShimRwLock<RuntimeInternal>>(runtime);
+    let runtime = mem::transmute::<LONG_PTR, *const RuntimeInternal>(runtime);
     let runtime = Runtime::from_ptr(runtime);
+    log::debug!("Found runtime: {:?}", &runtime);
+
     let wruntime = runtime.as_win32().unwrap();
 
     // get the surface at the location indicated by the pointer
@@ -103,6 +108,7 @@ pub unsafe extern "system" fn window_procedure(
     }
 
     // forget the runtime so the pointer is still valid
+    log::debug!("Dropping both locks");
     mem::forget((wruntime, surface));
     mem::forget(runtime);
 

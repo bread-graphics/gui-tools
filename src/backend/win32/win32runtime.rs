@@ -43,6 +43,9 @@ unsafe extern "system" fn enum_monitor_proc(
     rectangle: LPRECT,
     storage_ptr: LPARAM,
 ) -> BOOL {
+    log::error!("Monitor: {:p}", monitor);
+    return TRUE;
+
     // get the monitor information
     let mut monitor_info: MaybeUninit<MONITORINFO> = MaybeUninit::uninit();
     if unsafe { winuser::GetMonitorInfoA(monitor, monitor_info.as_mut_ptr()) } == 0 {
@@ -83,6 +86,7 @@ impl Win32Runtime {
         // get all of the monitors
         // this is an unsafe cell, just in case the compiler tries to optimize this as immutable
         let monitors: UnsafeCell<StorageVec<Win32Monitor, 12>> = UnsafeCell::new(StorageVec::new());
+        // TODO: properly handle monitors
         if unsafe {
             winuser::EnumDisplayMonitors(
                 ptr::null_mut(),
@@ -92,8 +96,9 @@ impl Win32Runtime {
             )
         } == FALSE
         {
-            return Err(crate::win32error("EnumDisplayMonitors"));
+            //return Err(crate::win32error("EnumDisplayMonitors"));
         }
+        unsafe { &mut *monitors.get() }.push(Win32Monitor::from_raw(1280, 720, true));
 
         // TODO: commctrl
         let monitors = monitors.into_inner();

@@ -136,7 +136,7 @@ impl Surface {
     pub(crate) fn new(runtime: &Runtime, properties: SurfaceInitialization) -> crate::Result<Self> {
         let (width, height) = match properties.parent {
             Some(parent) => runtime.surface_at(parent).unwrap().size(),
-            None => runtime.default_monitor().size(),
+            None => runtime.default_monitor().unwrap().size(),
         };
 
         Ok(Self {

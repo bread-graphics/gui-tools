@@ -66,7 +66,7 @@ impl Win32Surface {
         let (parent_width, parent_height) = match init.parent {
             None => {
                 // just use the monitor width and height
-                runtime.default_monitor().size()
+                runtime.default_monitor().unwrap().size()
             }
             Some(hwnd_num) => {
                 // get the window rect and calculate from that
@@ -79,7 +79,7 @@ impl Win32Surface {
                 } == 0
                 {
                     // if it failed, just use monitor width and height
-                    runtime.default_monitor().size()
+                    runtime.default_monitor().unwrap().size()
                 } else {
                     let rect = unsafe { rect.assume_init() };
                     let hw = (rect.right - rect.left, rect.bottom - rect.top);
@@ -91,6 +91,9 @@ impl Win32Surface {
         let (x, y) =
             init.starting_point
                 .to_x_y(init.width, init.height, parent_width, parent_height);
+
+        // remove our current references to stuff
+        mem::drop(wruntime);
 
         // create the window proper
         let hwnd = unsafe {
@@ -117,6 +120,9 @@ impl Win32Surface {
             Some(hwnd) => hwnd,
             None => return Err(crate::win32error("CreateWindowExA")),
         };
+
+        // show the window
+        unsafe { winuser::ShowWindow(hwnd.as_ptr(), winuser::SW_SHOW) };
 
         Ok(Self {
             hwnd,

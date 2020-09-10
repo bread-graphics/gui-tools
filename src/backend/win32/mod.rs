@@ -32,7 +32,8 @@ fn surface_function(
     runtime: &Runtime,
     surface: &SurfaceInitialization,
 ) -> crate::Result<SurfaceInner> {
-    unimplemented!()
+    let surface = Win32Surface::new(runtime, surface)?;
+    Ok(SurfaceInner::Win32(surface))
 }
 
 #[inline]

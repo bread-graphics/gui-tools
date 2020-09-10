@@ -18,7 +18,7 @@ use crate::{
     surface::{Surface, SurfaceInitialization},
 };
 use core::{
-    mem,
+    fmt, mem,
     sync::atomic::{AtomicBool, Ordering},
 };
 use owning_ref::OwningRef;
@@ -38,7 +38,7 @@ use core::future::Future;
 // current internal runtime
 // used as a pointer to circumvent allocation
 #[cfg(not(feature = "alloc"))]
-struct GlobalRuntime(UnsafeCell<Option<ShimRwLock<RuntimeInternal>>>, Mutex<()>);
+struct GlobalRuntime(UnsafeCell<Option<RuntimeInternal>>, Mutex<()>);
 
 #[cfg(not(feature = "alloc"))]
 impl GlobalRuntime {
@@ -59,12 +59,12 @@ static GLOBAL_RUNTIME: GlobalRuntime = GlobalRuntime::new();
 #[cfg(not(feature = "alloc"))]
 impl GlobalRuntime {
     #[inline]
-    unsafe fn inner(&self) -> &Option<ShimRwLock<RuntimeInternal>> {
+    unsafe fn inner(&self) -> &Option<RuntimeInternal> {
         &*self.0.get()
     }
 
     #[inline]
-    unsafe fn inner_mut(&self) -> &mut Option<ShimRwLock<RuntimeInternal>> {
+    unsafe fn inner_mut(&self) -> &mut Option<RuntimeInternal> {
         &mut *self.0.get()
     }
 
@@ -83,7 +83,7 @@ pub struct Runtime {
 #[cfg(feature = "alloc")]
 #[repr(transparent)]
 /// The runtime for the GUI engine.
-pub struct Runtime(Arc<ShimRwLock<RuntimeInternal>>);
+pub struct Runtime(Arc<RuntimeInternal>);
 
 fn new_inner_runtime(backend: Backend) -> crate::Result<RuntimeInternal> {
     let (default_monitor, sys) = backend.open()?;
@@ -91,9 +91,9 @@ fn new_inner_runtime(backend: Backend) -> crate::Result<RuntimeInternal> {
         backend,
         sys,
         delivery: DefaultEventDelivery::new(),
-        peekers: StorageVec::new(),
+        peekers: ShimRwLock::new(StorageVec::new()),
         default_monitor,
-        surfaces: StorageMap::new(),
+        surfaces: ShimRwLock::new(StorageMap::new()),
         suppress_peeker_loop: AtomicBool::new(backend.suppress_peeker_loop),
         #[cfg(feature = "async")]
         joiner: None,
@@ -145,13 +145,13 @@ pub struct RuntimeInternal {
     delivery: DefaultEventDelivery,
 
     // people to inform of new events
-    peekers: StorageVec<Peeker, 5>,
+    peekers: ShimRwLock<StorageVec<Peeker, 5>>,
 
     // the default monitor that windows are initially spawned on
     default_monitor: usize,
 
     // list of surfaces contained in the SysRuntime
-    surfaces: StorageMap<usize, Surface, 25>,
+    surfaces: ShimRwLock<StorageMap<usize, Surface, 25>>,
 
     // whether or not to suppress the peeker loop (i.e. it's already been run (i.e. win32))
     suppress_peeker_loop: AtomicBool,
@@ -178,7 +178,7 @@ impl Runtime {
     #[cfg(feature = "alloc")]
     #[inline]
     fn new_impl(backend: Backend) -> crate::Result<Self> {
-        Ok(Self(Arc::new(ShimRwLock::new(new_inner_runtime(backend)?))))
+        Ok(Self(Arc::new(new_inner_runtime(backend)?)))
     }
 
     #[cfg(not(feature = "alloc"))]
@@ -188,8 +188,7 @@ impl Runtime {
 
         // SAFETY: we have the spinny lock, we have exclusive access to the unsafe cell
         if let None = unsafe { GLOBAL_RUNTIME.inner() } {
-            *unsafe { GLOBAL_RUNTIME.inner_mut() } =
-                Some(ShimRwLock::new(new_inner_runtime(backend)?));
+            *unsafe { GLOBAL_RUNTIME.inner_mut() } = Some(new_inner_runtime(backend)?);
         } else {
             return Err(crate::Error::RuntimeDuplication);
         }
@@ -220,81 +219,51 @@ impl Runtime {
 
     #[inline]
     #[cfg(feature = "alloc")]
-    pub(crate) fn into_ptr(self) -> *const ShimRwLock<RuntimeInternal> {
+    pub(crate) fn into_ptr(self) -> *const RuntimeInternal {
         Arc::into_raw(self.0)
     }
 
     #[inline]
     #[cfg(not(feature = "alloc"))]
-    pub(crate) fn into_ptr(self) -> *const ShimRwLock<RuntimeInernal> {
+    pub(crate) fn into_ptr(self) -> *const RuntimeInernal {
         unsafe { GLOBAL_RUNTIME.inner() }.as_ref().unwrap()
     }
 
     #[inline]
     #[cfg(feature = "alloc")]
-    pub(crate) unsafe fn from_ptr(ptr: *const ShimRwLock<RuntimeInternal>) -> Self {
+    pub(crate) unsafe fn from_ptr(ptr: *const RuntimeInternal) -> Self {
         Self(Arc::from_raw(ptr))
     }
 
     #[inline]
     #[cfg(not(feature = "alloc"))]
-    pub(crate) unsafe fn from_ptr(ptr: *const ShimRwLock<RuntimeInternal>) -> Self {
+    pub(crate) unsafe fn from_ptr(ptr: *const RuntimeInternal) -> Self {
         assert!(ptr as *const _ == GLOBAL_RUNTIME.inner().as_ref().unwrap() as *const _);
         Self { private: () }
     }
 
     #[cfg(feature = "alloc")]
     #[inline]
-    fn inner(&self) -> RwLockReadGuard<'_, RuntimeInternal> {
-        self.0.read()
+    fn inner(&self) -> &RuntimeInternal {
+        log::debug!("Borrowing inner lock immutably");
+        &*self.0
     }
 
     #[cfg(not(feature = "alloc"))]
     #[inline]
-    fn inner(&self) -> RwLockReadGuard<'_, RuntimeInternal> {
+    fn inner(&self) -> &RuntimeInternal {
         // SAFETY: the only time global_runtime_mut is called is during initialization
-        unsafe { GLOBAL_RUNTIME.inner() }.as_ref().unwrap().read()
-    }
-
-    #[cfg(feature = "alloc")]
-    #[inline]
-    fn inner_locked(&self) -> RwLockWriteGuard<'_, RuntimeInternal> {
-        self.0.write()
-    }
-
-    #[cfg(not(feature = "alloc"))]
-    #[inline]
-    fn inner_locked(&self) -> RwLockWriteGuard<'_, RuntimeInternal> {
-        // SAFETY: same as above
-        unsafe { GLOBAL_RUNTIME.inner() }.as_ref().unwrap().write()
+        unsafe { GLOBAL_RUNTIME.inner() }.as_ref().unwrap()
     }
 
     #[inline]
-    pub(crate) fn as_x11(
-        &self,
-    ) -> Option<OwningRef<RwLockReadGuard<'_, RuntimeInternal>, X11Runtime>> {
-        let inner = self.inner();
-        match inner.sys.as_x11() {
-            Some(_) => Some(OwningRef::new(inner).map(|ri| match ri.sys.as_x11() {
-                Some(x) => x,
-                None => unreachable!(),
-            })),
-            None => None,
-        }
+    pub(crate) fn as_x11(&self) -> Option<&X11Runtime> {
+        self.inner().sys.as_x11()
     }
 
     #[inline]
-    pub(crate) fn as_win32(
-        &self,
-    ) -> Option<OwningRef<RwLockReadGuard<'_, RuntimeInternal>, Win32Runtime>> {
-        let inner = self.inner();
-        match inner.backend.ty() {
-            BackendType::Win32 => Some(OwningRef::new(inner).map(|ri| match ri.sys.as_win32() {
-                Some(w) => w,
-                None => unreachable!(),
-            })),
-            _ => None,
-        }
+    pub(crate) fn as_win32(&self) -> Option<&Win32Runtime> {
+        self.inner().sys.as_win32()
     }
 
     #[inline]
@@ -303,21 +272,19 @@ impl Runtime {
     }
 
     #[inline]
-    pub fn default_monitor(&self) -> OwningRef<RwLockReadGuard<'_, RuntimeInternal>, Monitor> {
-        let inner = self.inner();
-        OwningRef::new(inner).map(|inner| inner.sys.monitor_at(inner.default_monitor).unwrap())
+    pub fn default_monitor(&self) -> Option<&Monitor> {
+        self.inner().sys.monitor_at(self.inner().default_monitor)
     }
 
     #[inline]
     pub fn surface_at(
         &self,
         id: usize,
-    ) -> Option<OwningRef<RwLockReadGuard<'_, RuntimeInternal>, Surface>> {
-        let inner = self.inner();
-        if inner.surfaces.contains_key(&id) {
-            Some(OwningRef::new(self.inner()).map(|ri| ri.surfaces.get(&id).unwrap()))
-        } else {
-            None
+    ) -> Option<OwningRef<RwLockReadGuard<'_, StorageMap<usize, Surface, 25>>, Surface>> {
+        let surfaces = self.inner().surfaces.read();
+        match surfaces.contains_key(&id) {
+            true => Some(OwningRef::new(surfaces).map(move |surfaces| surfaces.get(&id).unwrap())),
+            false => None,
         }
     }
 
@@ -332,14 +299,14 @@ impl Runtime {
     pub fn create_surface(&self, properties: SurfaceInitialization) -> crate::Result<usize> {
         let window = Surface::new(self, properties)?;
         let id = window.id();
-        self.inner_locked().surfaces.insert(id, window);
+        self.inner().surfaces.write().insert(id, window);
         Ok(id)
     }
 
     /// The backend assocaited with this item.
     #[inline]
-    pub fn backend(&self) -> OwningRef<RwLockReadGuard<'_, RuntimeInternal>, Backend> {
-        OwningRef::new(self.inner()).map(|ri| &ri.backend)
+    pub fn backend(&self) -> &Backend {
+        &self.inner().backend
     }
 
     /// Dispatch events.
@@ -372,35 +339,26 @@ impl Runtime {
     pub fn run_iteration(&self) -> crate::Result<bool> {
         log::debug!("Running an iteration of the event loop.");
 
-        let mut inner = Some(self.inner_locked());
-        let ev = match inner.as_mut().unwrap().delivery.pop_event() {
+        let inner = self.inner();
+        let ev = match inner.delivery.pop_event() {
             Some(ev) => ev,
             None => loop {
-                if let Some(ev) = inner.as_mut().unwrap().delivery.pop_event() {
+                if let Some(ev) = inner.delivery.pop_event() {
                     break ev;
                 }
-                mem::drop(inner.take());
 
                 log::debug!("Querying system for new events...");
-                let served = self.inner().sys.serve_event(self)?;
-                inner = Some(self.inner_locked());
-                inner.as_mut().unwrap().delivery.add_events(served);
+                let served = inner.sys.serve_event(self)?;
+                inner.delivery.add_events(served);
             },
         };
         log::debug!("Running iteration on event {:?}", &ev);
 
         // clone the peekers out while we have the lock
-        let peekers = inner.as_mut().unwrap().peekers.clone();
-        let suppress_peeker_loop = inner
-            .as_ref()
-            .unwrap()
-            .suppress_peeker_loop
-            .load(Ordering::Acquire);
-
-        mem::drop(inner);
+        let suppress_peeker_loop = inner.suppress_peeker_loop.load(Ordering::Acquire);
 
         if !suppress_peeker_loop {
-            if !self.peeker_loop(&peekers, &ev)? {
+            if !self.peeker_loop(&inner.peekers.read(), &ev)? {
                 return Ok(false);
             }
         }
@@ -414,7 +372,7 @@ impl Runtime {
         &self,
         peeker: &'static dyn Fn(&Runtime, &Event) -> crate::Result<EventLoopAction>,
     ) {
-        self.inner_locked().peekers.push(Peeker::Unowned(peeker))
+        self.inner().peekers.write().push(Peeker::Unowned(peeker))
     }
 
     /// Add an owned peeker to this runtime.
@@ -424,7 +382,7 @@ impl Runtime {
     where
         F: Fn(&Runtime, &Event) -> crate::Result<EventLoopAction> + 'static,
     {
-        self.inner_locked().peekers.push(Peeker::Owned(
+        self.inner().peekers.write().push(Peeker::Owned(
             (Box::new(peeker) as Box<dyn Fn(&Runtime, &Event) -> crate::Result<EventLoopAction>>)
                 .into(),
         ))
@@ -453,4 +411,11 @@ pub trait RuntimeBackend {
 
     /// Get a monitor at a certain index.
     fn monitor_at(&self, monitor: usize) -> Option<&Monitor>;
+}
+
+impl fmt::Debug for Runtime {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("Runtime")
+    }
 }

@@ -24,6 +24,14 @@ impl Win32Monitor {
     }
 
     #[inline]
+    pub(crate) fn from_raw(width: u32, height: u32, primary: bool) -> Self {
+        Self {
+            monitor: Monitor::new(width, height),
+            primary,
+        }
+    }
+
+    #[inline]
     pub fn primary(&self) -> bool {
         self.primary
     }

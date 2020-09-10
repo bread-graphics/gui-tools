@@ -15,7 +15,7 @@ use gui_tools::{
 use std::env;
 
 fn main() -> Result<()> {
-    env::set_var("RUST_LOG", "gui_tools=info");
+    env::set_var("RUST_LOG", "gui_tools=debug");
     env_logger::init();
 
     deadlock_detector();

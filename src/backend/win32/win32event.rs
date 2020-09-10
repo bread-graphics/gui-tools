@@ -11,5 +11,11 @@ pub fn win32_translate_event(
     wparam: WPARAM,
     lparam: LPARAM,
 ) -> crate::Result<StorageVec<Event, 5>> {
-    unimplemented!()
+    let mut events = StorageVec::new();
+
+    match msg {
+        _ => log::debug!("Non-handled event: {}", msg),
+    }
+
+    Ok(events)
 }
