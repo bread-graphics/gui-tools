@@ -358,3 +358,18 @@ impl KeyType {
         }
     }
 }
+
+#[cfg(windows)]
+mod win32_keysym_table;
+
+#[cfg(windows)]
+impl KeyType {
+    pub(crate) fn from_win32(wkey: usize) -> Self {
+        use win32_keysym_table::WIN32_KEYSYM_TABLE;
+        if WIN32_KEYSYM_TABLE.len() <= wkey {
+            Self::Unknown
+        } else {
+            WIN32_KEYSYM_TABLE[wkey]
+        }
+    }
+}

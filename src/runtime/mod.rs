@@ -321,7 +321,16 @@ impl Runtime {
     }
 
     #[inline]
+    pub(crate) fn peekers(&self) -> RwLockReadGuard<'_, StorageVec<Peeker, 5>> {
+        self.inner().peekers.read()
+    }
+
+    #[inline]
     pub(crate) fn peeker_loop(&self, peekers: &[Peeker], event: &Event) -> crate::Result<bool> {
+        if event.skip_peeker_loop() {
+            return Ok(true);
+        }
+
         let mut peekers_iter = peekers.iter();
         while let Some(peek) = peekers_iter.next() {
             match peek.call(self, event) {

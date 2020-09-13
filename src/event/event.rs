@@ -123,6 +123,8 @@ pub struct Event {
     dependent_evs: StorageVec<usize, 2>,
     // is this a termination event?
     is_terminator: bool,
+    // skip the peeker loop for this event?
+    skip_peeker: bool,
 }
 
 impl fmt::Debug for Event {
@@ -166,6 +168,7 @@ impl Event {
             id: EVENT_ID.fetch_add(1, Ordering::Acquire),
             dependent_evs: StorageVec::new(),
             is_terminator: false,
+            skip_peeker: false,
             #[cfg(feature = "alloc")]
             data: Vec::new(),
         }
@@ -182,6 +185,18 @@ impl Event {
     #[inline]
     pub fn set_is_terminator(&mut self, it: bool) {
         self.is_terminator = it;
+    }
+
+    /// Should this event skip the peeker loop?
+    #[inline]
+    pub fn skip_peeker_loop(&self) -> bool {
+        self.skip_peeker
+    }
+
+    /// Set whether or not this event should skip the peeker loop.
+    #[inline]
+    pub fn set_skip_peeker_loop(&mut self, val: bool) {
+        self.skip_peeker = val;
     }
 
     /// Get the type of this event.

@@ -15,7 +15,7 @@ use gui_tools::{
 use std::env;
 
 fn main() -> Result<()> {
-    env::set_var("RUST_LOG", "gui_tools=debug");
+    env::set_var("RUST_LOG", "gui_tools=info");
     env_logger::init();
 
     deadlock_detector();
@@ -39,6 +39,7 @@ fn main() -> Result<()> {
         // if this is a graphical event, draw a line
         if let EventType::Paint(ref g) = event.ty() {
             g.set_color(colors::RED)?;
+            g.set_line_width(4)?;
             g.draw_lines(&[
                 point2(60, 10),
                 point2(110, 50),
@@ -49,7 +50,6 @@ fn main() -> Result<()> {
             ])?;
 
             g.set_color(colors::GREEN)?;
-            g.set_line_width(4)?;
             g.fill_arc(150, 150, 60, 80, Angle::degrees(0.0), Angle::degrees(270.0))?;
             g.set_color(colors::BLACK)?;
             g.draw_ellipse(150, 150, 60, 80)?;

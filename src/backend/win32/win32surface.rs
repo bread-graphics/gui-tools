@@ -10,9 +10,11 @@ use crate::{
     surface::{SurfaceBackend, SurfaceInitialization},
 };
 use core::{
+    cell::UnsafeCell,
     convert::TryInto,
     mem::{self, MaybeUninit},
     ptr::{self, NonNull},
+    sync::atomic::{AtomicPtr, Ordering},
 };
 use cty::c_int;
 use winapi::{
@@ -49,7 +51,7 @@ impl Default for BackgroundDetails {
 pub struct Win32Surface {
     hwnd: NonNull<HWND__>,
     // if we are drawing, this is the current DC
-    current_dc: Option<NonNull<HDC__>>,
+    current_dc: AtomicPtr<UnsafeCell<HDC__>>,
 
     // details for drawing the background
     background_details: RwLock<BackgroundDetails>,
@@ -121,14 +123,39 @@ impl Win32Surface {
             None => return Err(crate::win32error("CreateWindowExA")),
         };
 
+        // set up tracking for mouse events
+        let mut mouse_events = winuser::TRACKMOUSEEVENT {
+            cbSize: mem::size_of::<winuser::TRACKMOUSEEVENT>() as _,
+            dwFlags: winuser::TME_HOVER | winuser::TME_LEAVE,
+            hwndTrack: hwnd.as_ptr(),
+            dwHoverTime: winuser::HOVER_DEFAULT,
+        };
+
+        if unsafe { winuser::TrackMouseEvent(&mut mouse_events) } == 0 {
+            return Err(crate::win32error("TrackMouseEvent"));
+        }
+
         // show the window
         unsafe { winuser::ShowWindow(hwnd.as_ptr(), winuser::SW_SHOW) };
 
         Ok(Self {
             hwnd,
-            current_dc: None,
+            current_dc: AtomicPtr::new(ptr::null_mut()),
             background_details: RwLock::new(Default::default()),
         })
+    }
+
+    /// Put a painting DC.
+    #[inline]
+    pub(crate) fn put_painter(&self, painter: NonNull<HDC__>) {
+        self.current_dc
+            .store(painter.cast().as_ptr(), Ordering::SeqCst);
+    }
+
+    /// Take the painting DC.
+    #[inline]
+    pub(crate) fn take_painter(&self) {
+        self.current_dc.store(ptr::null_mut(), Ordering::SeqCst);
     }
 
     /// Helper to set the border details.
@@ -165,6 +192,16 @@ impl Win32Surface {
 
         self.invalidate(None)?;
         Ok(())
+    }
+
+    #[inline]
+    pub fn background_brush(&self) -> Option<NonNull<HBRUSH__>> {
+        self.background_details.read().background_brush
+    }
+
+    #[inline]
+    pub fn hwnd(&self) -> NonNull<HWND__> {
+        self.hwnd
     }
 }
 
@@ -285,6 +322,9 @@ impl SurfaceBackend for Win32Surface {
 
     #[inline]
     fn graphics_internal(&self) -> crate::Result<NonNull<dyn GraphicsInternal>> {
-        unimplemented!()
+        match NonNull::new(self.current_dc.load(Ordering::Acquire)) {
+            Some(dc) => Ok(dc),
+            None => Err(crate::Win32Error::NoDCAvailable.into()),
+        }
     }
 }

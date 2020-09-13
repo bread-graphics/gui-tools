@@ -14,12 +14,16 @@ pub enum Win32Error {
         #[cfg(feature = "alloc")]
         error_text: String,
     },
+    NoDCAvailable,
+    DCIsNull,
 }
 
 impl fmt::Display for Win32Error {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::NoDCAvailable => f.write_str("Unable to acquire a DC to paint with"),
+            Self::DCIsNull => f.write_str("Unable to create a DC for paint operations"),
             #[cfg(not(feature = "alloc"))]
             Self::FunctionFailure {
                 function_name,

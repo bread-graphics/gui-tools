@@ -252,8 +252,8 @@ pub(crate) fn translate_x11_event(
             let mut xke = unsafe { xev.key };
             let surface = surface.unwrap();
 
-            let ctrl = xke.state | xlib::ControlMask != 0;
-            let shift = xke.state | xlib::ShiftMask != 0;
+            let ctrl = xke.state & xlib::ControlMask != 0;
+            let shift = xke.state & xlib::ShiftMask != 0;
 
             let keysym = match translate_key(&mut xke, surface.as_x11().unwrap()) {
                 Ok(keysym) => keysym,

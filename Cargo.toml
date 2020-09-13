@@ -33,7 +33,7 @@ default-features = false
 
 [target.'cfg(windows)'.dependencies.winapi]
 version = "0.3.9"
-features = ["libloaderapi", "minwindef", "windef", "errhandlingapi", "winuser", "ntdef"]
+features = ["libloaderapi", "minwindef", "windef", "errhandlingapi", "winuser", "ntdef", "windowsx"]
 
 [features]
 default = ["std"]

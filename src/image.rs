@@ -206,7 +206,6 @@ impl<T: 'static> Image<T> {
         }
     }
 
-    // TODO: rewrite if higher kinded generics ever become a thing
     #[cfg(feature = "alloc")]
     #[inline]
     pub unsafe fn from_elements_arc_unchecked(
@@ -220,6 +219,22 @@ impl<T: 'static> Image<T> {
             size: Size2D::new(width, height),
             color_space,
             id: NEXT_IMAGE_ID.fetch_add(1, Ordering::Acquire),
+        }
+    }
+
+    #[cfg(feature = "alloc")]
+    #[inline]
+    pub fn from_elements_arc<A: Into<Arc<[T]>>>(
+        data: A,
+        width: usize,
+        height: usize,
+        color_space: ColorSpace,
+    ) -> Option<Self> {
+        let arc: Arc<[T]> = data.into();
+        if width * height != arc.len() || arc.len() % color_space.size() != 0 {
+            None
+        } else {
+            Some(unsafe { Self::from_elements_arc_unchecked(arc, width, height, color_space) })
         }
     }
 

@@ -102,15 +102,25 @@ pub unsafe extern "system" fn window_procedure(
     };
 
     // translate the message to a gui-tools event
-    match super::win32_translate_event(&runtime, surface.as_deref(), msg, wparam, lparam) {
-        Ok(events) => wruntime.store_events(events),
-        Err(e) => wruntime.store_error(e),
-    }
+    let supress_default =
+        match super::win32_translate_event(&runtime, surface.as_deref(), msg, wparam, lparam) {
+            Ok((events, supress_default)) => {
+                wruntime.store_events(events);
+                supress_default
+            }
+            Err(e) => {
+                wruntime.store_error(e);
+                None
+            }
+        };
 
     // forget the runtime so the pointer is still valid
     log::debug!("Dropping both locks");
     mem::forget((wruntime, surface));
     mem::forget(runtime);
 
-    DefWindowProcA(hwnd, msg, wparam, lparam)
+    match supress_default {
+        None => DefWindowProcA(hwnd, msg, wparam, lparam),
+        Some(res) => res,
+    }
 }

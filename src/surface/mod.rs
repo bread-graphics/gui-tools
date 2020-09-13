@@ -1,7 +1,7 @@
 // MIT/Apache2 License
 
 use crate::{
-    backend::{x11::X11Surface, SurfaceInner},
+    backend::{win32::Win32Surface, x11::X11Surface, SurfaceInner},
     color::{colors, Rgba},
     event::EventTypeMask,
     geometry::Rectangle,
@@ -146,8 +146,13 @@ impl Surface {
     }
 
     #[inline]
-    pub fn as_x11(&self) -> Option<&X11Surface> {
+    pub(crate) fn as_x11(&self) -> Option<&X11Surface> {
         self.internal.as_x11()
+    }
+
+    #[inline]
+    pub(crate) fn as_win32(&self) -> Option<&Win32Surface> {
+        self.internal.as_win32()
     }
 
     /// The universal ID of the window.

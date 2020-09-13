@@ -427,10 +427,10 @@ impl SurfaceBackend for X11Surface {
 
     #[inline]
     fn graphics_internal(&self) -> crate::Result<NonNull<dyn GraphicsInternal>> {
-        // SAFETY: we know Self is non-null
+        // SAFETY: we know Self is non-null, and Graphics only invokes GraphicsInternal immutably
         Ok(unsafe {
             NonNull::new_unchecked(
-                self as *const Self as *const dyn GraphicsInternal as *mut dyn GraphicsInternal,
+                self as *const Self as *const GraphicsInternal as *mut GraphicsInternal,
             )
         })
     }

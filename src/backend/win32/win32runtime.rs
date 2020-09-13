@@ -43,12 +43,13 @@ unsafe extern "system" fn enum_monitor_proc(
     rectangle: LPRECT,
     storage_ptr: LPARAM,
 ) -> BOOL {
-    log::error!("Monitor: {:p}", monitor);
-    return TRUE;
-
     // get the monitor information
-    let mut monitor_info: MaybeUninit<MONITORINFO> = MaybeUninit::uninit();
-    if unsafe { winuser::GetMonitorInfoA(monitor, monitor_info.as_mut_ptr()) } == 0 {
+    let mut monitor_info = MONITORINFO {
+        cbSize: mem::size_of::<MONITORINFO>() as _,
+        ..unsafe { MaybeUninit::zeroed().assume_init() }
+    };
+
+    if unsafe { winuser::GetMonitorInfoA(monitor, &mut monitor_info) } == 0 {
         log::error!(
             "Unable to retrieve monitor: {}",
             crate::win32error("GetMonitorInfoA")
@@ -57,7 +58,7 @@ unsafe extern "system" fn enum_monitor_proc(
     }
 
     // create a win32 monitor structure
-    let mon = match Win32Monitor::new(unsafe { monitor_info.assume_init() }) {
+    let mon = match Win32Monitor::new(monitor_info) {
         Ok(mon) => mon,
         Err(e) => {
             log::error!("Unable to process monitor info: {}", e);
@@ -86,7 +87,6 @@ impl Win32Runtime {
         // get all of the monitors
         // this is an unsafe cell, just in case the compiler tries to optimize this as immutable
         let monitors: UnsafeCell<StorageVec<Win32Monitor, 12>> = UnsafeCell::new(StorageVec::new());
-        // TODO: properly handle monitors
         if unsafe {
             winuser::EnumDisplayMonitors(
                 ptr::null_mut(),
@@ -96,9 +96,9 @@ impl Win32Runtime {
             )
         } == FALSE
         {
-            //return Err(crate::win32error("EnumDisplayMonitors"));
+            return Err(crate::win32error("EnumDisplayMonitors"));
         }
-        unsafe { &mut *monitors.get() }.push(Win32Monitor::from_raw(1280, 720, true));
+        //        unsafe { &mut *monitors.get() }.push(Win32Monitor::from_raw(1280, 720, true));
 
         // TODO: commctrl
         let monitors = monitors.into_inner();
@@ -143,7 +143,7 @@ impl Win32Runtime {
             unsafe { winuser::LoadIconA(ptr::null_mut(), winuser::IDI_APPLICATION as *const _) };
         let cursor =
             unsafe { winuser::LoadCursorA(ptr::null_mut(), winuser::IDC_ARROW as *const _) };
-        let mut window_class = WNDCLASSEXA {
+        let window_class = WNDCLASSEXA {
             cbSize: mem::size_of::<WNDCLASSEXA>() as UINT,
             style: 0,
             cbClsExtra: 0,
@@ -171,7 +171,7 @@ impl Win32Runtime {
 #[cfg_attr(feature = "async", async_trait::async_trait)]
 impl RuntimeBackend for Win32Runtime {
     #[inline]
-    fn serve_event(&self, real: &Runtime) -> crate::Result<StorageVec<Event, 5>> {
+    fn serve_event(&self, _real: &Runtime) -> crate::Result<StorageVec<Event, 5>> {
         // run an iteration of the event loop.
         let mut msg: MaybeUninit<MSG> = MaybeUninit::uninit();
         match unsafe { winuser::GetMessageA(msg.as_mut_ptr(), ptr::null_mut(), 0, 0) } {
