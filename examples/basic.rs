@@ -38,7 +38,7 @@ fn main() -> Result<()> {
 
         // if this is a graphical event, draw a line
         if let EventType::Paint(ref g) = event.ty() {
-            g.set_color(colors::RED)?;
+            g.set_color(colors::GREEN)?;
             g.set_line_width(4)?;
             g.draw_lines(&[
                 point2(60, 10),
@@ -49,10 +49,10 @@ fn main() -> Result<()> {
                 point2(60, 10),
             ])?;
 
-            g.set_color(colors::GREEN)?;
+            g.set_color(colors::RED)?;
             g.fill_arc(150, 150, 60, 80, Angle::degrees(0.0), Angle::degrees(270.0))?;
             g.set_color(colors::BLACK)?;
-            g.draw_ellipse(150, 150, 60, 80)?;
+//            g.draw_ellipse(150, 150, 60, 80)?;
         } else if let EventType::MouseDown(_, _) = event.ty() {
             r.surface_at(surface)
                 .unwrap()

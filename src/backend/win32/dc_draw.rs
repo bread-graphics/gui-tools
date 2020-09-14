@@ -113,6 +113,7 @@ impl GraphicsInternal for UnsafeCell<HDC__> {
         if res.is_null() {
             Err(crate::win32error("SelectObject"))
         } else {
+            unsafe { wingdi::DeleteObject(res as *mut _) };
             Ok(())
         }
     }
