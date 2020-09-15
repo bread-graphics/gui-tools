@@ -52,7 +52,7 @@ fn main() -> Result<()> {
             g.set_color(colors::RED)?;
             g.fill_arc(150, 150, 60, 80, Angle::degrees(0.0), Angle::degrees(270.0))?;
             g.set_color(colors::BLACK)?;
-//            g.draw_ellipse(150, 150, 60, 80)?;
+            g.draw_ellipse(150, 150, 60, 80)?;
         } else if let EventType::MouseDown(_, _) = event.ty() {
             r.surface_at(surface)
                 .unwrap()

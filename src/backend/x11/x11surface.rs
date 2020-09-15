@@ -295,12 +295,11 @@ fn set_event_mask(
     window: Window,
     mask: &[EventTypeMask],
 ) -> crate::Result<()> {
-    const DEFAULT_MASK: c_long = xlib::ExposureMask;
+    const DEFAULT_MASK: c_long = xlib::ExposureMask | xlib::StructureNotifyMask;
 
     // table to convert EventTypeMask to an X11 event mask
     fn etm_to_x11(etm: EventTypeMask) -> Option<c_long> {
         Some(match etm {
-            EventTypeMask::Resized => xlib::StructureNotifyMask,
             EventTypeMask::MouseDown => xlib::ButtonPressMask,
             EventTypeMask::MouseUp => xlib::ButtonReleaseMask,
             EventTypeMask::MouseEnterWindow => xlib::EnterWindowMask,
@@ -308,7 +307,6 @@ fn set_event_mask(
             EventTypeMask::MouseMove => xlib::PointerMotionMask,
             EventTypeMask::KeyDown => xlib::KeyPressMask,
             EventTypeMask::KeyUp => xlib::KeyReleaseMask,
-            EventTypeMask::Paint => xlib::ExposureMask,
             _ => return None,
         })
     }

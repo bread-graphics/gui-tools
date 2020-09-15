@@ -314,10 +314,11 @@ impl SurfaceBackend for Win32Surface {
             )
         } == 0
         {
-            Err(crate::win32error("InvalidateRect"))
-        } else {
-            Ok(())
-        }
+            return Err(crate::win32error("InvalidateRect"));
+        } 
+ 
+        unsafe { winuser::UpdateWindow(self.hwnd.as_ptr()) };
+        Ok(())
     }
 
     #[inline]

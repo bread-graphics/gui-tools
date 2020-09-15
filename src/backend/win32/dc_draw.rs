@@ -8,31 +8,125 @@ use core::{
     cell::UnsafeCell,
     mem::{self, MaybeUninit},
     ptr::{self, NonNull},
+    sync::atomic::{AtomicPtr, Ordering},
 };
 use euclid::Angle;
 use winapi::{
-    ctypes::c_void,
-    shared::{ntdef::HANDLE, windef::HDC__},
+    ctypes::{c_int, c_void},
+    shared::{
+        minwindef::BYTE,
+        ntdef::HANDLE,
+        windef::{COLORREF, HDC__, HGDIOBJ, POINT},
+    },
     um::wingdi::{self, LOGPEN},
 };
 
+#[cfg(not(feature = "std"))]
+use conquer_once::spin::Lazy;
+#[cfg(feature = "std")]
+use conquer_once::Lazy;
+
+// container for default objects
+#[repr(transparent)]
+struct StockObject(AtomicPtr<c_void>);
+
+impl StockObject {
+    #[inline]
+    fn new(ty: c_int) -> crate::Result<Self> {
+        let so = unsafe { wingdi::GetStockObject(ty) };
+        if so.is_null() {
+            Err(crate::win32error("GetStockObject"))
+        } else {
+            Ok(Self(AtomicPtr::new(so as *mut _)))
+        }
+    }
+
+    #[inline]
+    fn get(&self) -> HGDIOBJ {
+        self.0.load(Ordering::Acquire)
+    }
+}
+
+static NULL_PEN: Lazy<StockObject> = Lazy::new(|| StockObject::new(wingdi::NULL_PEN as _).unwrap());
+static DEFAULT_BRUSH: Lazy<StockObject> =
+    Lazy::new(|| StockObject::new(wingdi::DC_BRUSH as _).unwrap());
+static NULL_BRUSH: Lazy<StockObject> =
+    Lazy::new(|| StockObject::new(wingdi::NULL_BRUSH as _).unwrap());
+
+#[inline]
+fn get_pen_color(dc: &UnsafeCell<HDC__>) -> crate::Result<COLORREF> {
+    let res = unsafe { wingdi::GetDCPenColor(dc.get()) };
+    if res == wingdi::CLR_INVALID {
+        Err(crate::win32error("GetDCPenColor"))
+    } else {
+        Ok(res)
+    }
+}
+
 #[inline]
 fn set_bg_mode(dc: &UnsafeCell<HDC__>, visible: bool) -> crate::Result<()> {
-    if unsafe {
-        wingdi::SetBkMode(
-            dc.get(),
-            if visible {
-                wingdi::OPAQUE as _
-            } else {
-                wingdi::TRANSPARENT as _
-            },
-        )
-    } == 0
-    {
-        Err(crate::win32error("SetBkMode"))
+    // either use the default brush with the SetDCBrushColor function or the null brush
+    let new_brush = if visible {
+        DEFAULT_BRUSH.get()
+    } else {
+        NULL_BRUSH.get()
+    };
+
+    if unsafe { wingdi::SelectObject(dc.get(), new_brush as *mut _) }.is_null() {
+        return Err(crate::win32error("SelectObject"));
     } else {
         Ok(())
     }
+}
+
+// copypasted from winapi
+const fn const_rgb(r: BYTE, g: BYTE, b: BYTE) -> COLORREF {
+    r as COLORREF | ((g as COLORREF) << 8) | ((b as COLORREF) << 16)
+}
+
+#[inline]
+fn set_pen_details<F>(dc: &UnsafeCell<HDC__>, mut f: F) -> crate::Result<()>
+where
+    F: FnMut(&mut LOGPEN),
+{
+    const DEFAULT_LOGPEN: LOGPEN = LOGPEN {
+        lopnStyle: wingdi::PS_SOLID as _,
+        lopnWidth: POINT { x: 1, y: 0 },
+        lopnColor: const_rgb(0, 0, 0),
+    };
+
+    let previous_pen = unsafe { wingdi::SelectObject(dc.get(), NULL_PEN.get()) };
+    let mut logpen = DEFAULT_LOGPEN;
+
+    if !previous_pen.is_null() {
+        if unsafe {
+            wingdi::GetObjectA(
+                previous_pen,
+                mem::size_of::<LOGPEN>() as _,
+                &mut logpen as *mut _ as *mut _,
+            )
+        } == 0
+        {
+            log::warn!("GetObjectA failed, but we don't truly need it.");
+        }
+    }
+
+    // run the function we have on the logpen
+    f(&mut logpen);
+
+    // dealloc the old pen
+    unsafe { wingdi::DeleteObject(previous_pen) };
+
+    // create a new pen
+    let new_pen = unsafe { wingdi::CreatePenIndirect(&logpen) };
+    if new_pen.is_null() {
+        return Err(crate::win32error("CreatePenIndirect"));
+    }
+
+    // select the object in
+    unsafe { wingdi::SelectObject(dc.get(), new_pen as *mut _) };
+
+    Ok(())
 }
 
 #[inline]
@@ -90,32 +184,14 @@ impl GraphicsInternal for UnsafeCell<HDC__> {
         let clr = wingdi::RGB(r, g, b);
         unsafe {
             wingdi::SetDCBrushColor(self.get(), clr);
-            wingdi::SetDCPenColor(self.get(), clr);
         };
-        Ok(())
+
+        set_pen_details(self, move |l| l.lopnColor = clr)
     }
 
     #[inline]
     fn set_line_width(&self, lw: u32) -> crate::Result<()> {
-        // create a new pen
-        let our_clr = unsafe { wingdi::GetDCPenColor(self.get()) };
-        if our_clr == wingdi::CLR_INVALID {
-            return Err(crate::win32error("GetDCPenColor"));
-        }
-
-        let hpen = unsafe { wingdi::CreatePen(wingdi::PS_SOLID as _, lw as _, our_clr) };
-        if hpen.is_null() {
-            return Err(crate::win32error("CreatePen"));
-        }
-
-        // put it into the DC
-        let res = unsafe { wingdi::SelectObject(self.get(), hpen as *mut _) };
-        if res.is_null() {
-            Err(crate::win32error("SelectObject"))
-        } else {
-            unsafe { wingdi::DeleteObject(res as *mut _) };
-            Ok(())
-        }
+        set_pen_details(self, move |l| l.lopnWidth.x = lw as _)
     }
 
     #[inline]

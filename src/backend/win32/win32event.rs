@@ -53,7 +53,7 @@ pub fn win32_translate_event(
     match msg {
         WM_ERASEBKGND => {
             // redraw the background
-            log::info!("Redrawing background...");
+            log::debug!("Redrawing background...");
 
             let surface = unwrap_surface!(surface, WM_ERASEBKGND);
             let wsurface = surface.as_win32().unwrap();
