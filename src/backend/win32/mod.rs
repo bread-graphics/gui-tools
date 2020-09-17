@@ -3,7 +3,7 @@
 use super::{Backend, BackendType, RuntimeInner, SurfaceInner};
 use crate::{runtime::Runtime, surface::SurfaceInitialization};
 
-mod dc_draw;
+pub(crate) mod gdi;
 mod win32event;
 mod win32monitor;
 mod win32runtime;

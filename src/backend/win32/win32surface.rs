@@ -1,5 +1,6 @@
 // MIT/Apache2 License
 
+use super::gdi::Win32GDIInfo;
 use crate::{
     color::{colors, Rgba},
     event::EventTypeMask,
@@ -50,8 +51,8 @@ impl Default for BackgroundDetails {
 
 pub struct Win32Surface {
     hwnd: NonNull<HWND__>,
-    // if we are drawing, this is the current DC
-    current_dc: AtomicPtr<UnsafeCell<HDC__>>,
+    // if we are drawing, this is the current GDI info set
+    current_dc: UnsafeCell<Option<Win32GDIInfo>>,
 
     // details for drawing the background
     background_details: RwLock<BackgroundDetails>,
@@ -140,7 +141,7 @@ impl Win32Surface {
 
         Ok(Self {
             hwnd,
-            current_dc: AtomicPtr::new(ptr::null_mut()),
+            current_dc: UnsafeCell::new(None),
             background_details: RwLock::new(Default::default()),
         })
     }
@@ -148,14 +149,14 @@ impl Win32Surface {
     /// Put a painting DC.
     #[inline]
     pub(crate) fn put_painter(&self, painter: NonNull<HDC__>) {
-        self.current_dc
-            .store(painter.cast().as_ptr(), Ordering::SeqCst);
+        let r = unsafe { &mut *self.current_dc.get() };
+        *r = Some(Win32GDIInfo::new(painter));
     }
 
     /// Take the painting DC.
     #[inline]
     pub(crate) fn take_painter(&self) {
-        self.current_dc.store(ptr::null_mut(), Ordering::SeqCst);
+        unsafe { &mut *self.current_dc.get() }.take()
     }
 
     /// Helper to set the border details.
@@ -315,17 +316,19 @@ impl SurfaceBackend for Win32Surface {
         } == 0
         {
             return Err(crate::win32error("InvalidateRect"));
-        } 
- 
+        }
+
         unsafe { winuser::UpdateWindow(self.hwnd.as_ptr()) };
         Ok(())
     }
 
     #[inline]
     fn graphics_internal(&self) -> crate::Result<NonNull<dyn GraphicsInternal>> {
-        match NonNull::new(self.current_dc.load(Ordering::Acquire)) {
-            Some(dc) => Ok(dc),
-            None => Err(crate::Win32Error::NoDCAvailable.into()),
+        let gi = self.current_dc.get();
+        if unsafe { &mut *gi }.is_none() {
+            Err(crate::Win32Error::NoDCAvailable)
+        } else {
+            Ok(unsafe { NonNull::new_unchecked(gi as *mut _) })
         }
     }
 }
