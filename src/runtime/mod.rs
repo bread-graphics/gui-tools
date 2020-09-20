@@ -52,11 +52,11 @@
 //! ```no_run
 //! # use gui_tools::runtime::Runtime;
 //! # let runtime = Runtime::new().unwrap();
-//! use gui_tools::{error::Result, event::Event};
+//! use gui_tools::{error::Result, event::{EventLoopAction, Event}};
 //!
-//! fn peeker(_runtime: &Runtime, event: &Event) -> crate::Result<()> {
+//! fn peeker(_runtime: &Runtime, event: &Event) -> Result<EventLoopAction> {
 //!      println!("Processing event: {:?}", event);
-//!      Ok(())
+//!      Ok(EventLoopAction::Continue)
 //! }
 //!
 //! runtime.add_peeker(&peeker);
@@ -69,9 +69,11 @@
 //! ```no_run
 //! # use gui_tools::runtime::Runtime;
 //! # let runtime = Runtime::new().unwrap();
+//! use gui_tools::event::EventLoopAction;
+//!
 //! runtime.add_peeker_owned(|_r, event| {
 //!     println!("Processing event: {:?}", event);
-//!     Ok(())
+//!     Ok(EventLoopAction::Continue)
 //! });
 //!
 //! runtime.run().unwrap();

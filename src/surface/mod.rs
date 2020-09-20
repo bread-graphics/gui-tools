@@ -105,10 +105,10 @@
 //! [`Runtime::surface_at`].
 //!
 //! ```no_run
-//! # use gui_tools::{runtime::Runtime, surface::{SurfaceInitializaiton, StartingPoint}};
+//! # use gui_tools::{runtime::Runtime, surface::{SurfaceInitialization, StartingPoint}};
 //! # let runtime = Runtime::new().unwrap();
 //! # let surface = runtime.create_surface(SurfaceInitialization::new(
-//! #                 None, StartingPoint::Center, 1, 1, "t"));
+//! #                 None, StartingPoint::Center, 1, 1, "t")).unwrap();
 //! let size = runtime.surface_at(surface).unwrap().size();
 //! ```
 //!
