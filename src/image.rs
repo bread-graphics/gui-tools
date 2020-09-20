@@ -101,7 +101,6 @@ pub trait GenericImage {
     }
 
     /// Get the color element at a certain index.
-    #[inline]
     fn color_at_flat(&self, index: usize) -> Option<Rgba>;
 
     /// Get the size of this image.

@@ -1,11 +1,16 @@
 // MIT/Apache2 License
 
+//! Events are things that can happen over the course of a `gui-tools` program.
+//!
+//! If surfaces are the building blocks of `gui-tools` programs, events are the electricity that powers this
+//! metaphorical building. Things like key presses, clicks, and window moves are processed into events. These
+//! events are usually passed along by the runtime; see documentation in the runtime module for more
+//! information on this.
+
 pub mod delivery;
 mod event;
-pub mod source;
 
 pub use event::*;
-pub use source::*;
 
 /// Operations of the event loop. This is used by peekers to give direction
 /// to the event runtime while it is running.

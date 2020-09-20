@@ -54,4 +54,7 @@ pub mod runtime;
 pub mod string;
 pub mod surface;
 
+#[path = "../tutorials/mod.rs"]
+pub mod tutorials;
+
 pub use error::*;

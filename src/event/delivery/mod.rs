@@ -1,5 +1,7 @@
 // MIT/Apache2 License
 
+//! Event queues.
+
 use crate::event::Event;
 use core::task::Waker;
 

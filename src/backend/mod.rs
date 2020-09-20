@@ -1,7 +1,8 @@
 // MIT/Apache2 License
 
 //! This module contains utilities used to deal with backends. The only type exported to the public
-//! is the `BackendType` enum. The rest is currently only available internally.
+//! is the `BackendType` enum and the `Backend` type. This should allow for the user creation of
+//! backends. The rest are only available internally.
 
 use crate::{runtime::Runtime, surface::SurfaceInitialization};
 
@@ -14,10 +15,10 @@ mod storage;
 pub use storage::*;
 
 #[cfg(target_os = "linux")]
-pub(crate) mod x11;
+pub mod x11;
 
 #[cfg(not(target_os = "linux"))]
-pub(crate) mod x11 {
+pub mod x11 {
     pub use super::noop::{
         noop_backend_selector as x11_backend_selector, NoOpRuntime as X11Runtime,
         NoOpSurface as X11Surface, NOOP_BACKEND as X11_BACKEND,
@@ -25,10 +26,10 @@ pub(crate) mod x11 {
 }
 
 #[cfg(windows)]
-pub(crate) mod win32;
+pub mod win32;
 
 #[cfg(not(windows))]
-pub(crate) mod win32 {
+pub mod win32 {
     pub use super::noop::{
         noop_backend_selector as win32_backend_selector, NoOpRuntime as Win32Runtime,
         NoOpSurface as Win32Surface,
@@ -47,6 +48,8 @@ pub enum BackendType {
     OtherStr(&'static str),
 }
 
+/// The backend library that `gui-tools` acts as an abstraction over. This is implemented as a series of
+/// function pointers that call functions that use this library.
 #[derive(Copy, Clone)]
 pub struct Backend {
     ty: BackendType,
@@ -58,6 +61,7 @@ pub struct Backend {
 }
 
 impl Backend {
+    /// Create a new runtime by some functions.
     #[inline]
     pub const fn new(
         ty: BackendType,
@@ -77,16 +81,19 @@ impl Backend {
         }
     }
 
+    /// The type associated with this backend.
     #[inline]
     pub fn ty(&self) -> BackendType {
         self.ty
     }
 
+    /// Open the runtime.
     #[inline]
     pub fn open(&self) -> crate::Result<(usize, RuntimeInner)> {
         (self.open_function)()
     }
 
+    /// Create a new surface.
     #[inline]
     pub fn surface(
         &self,
@@ -96,6 +103,7 @@ impl Backend {
         (self.surface_function)(runtime, props)
     }
 
+    /// Register the runtime.
     #[inline]
     pub fn register(&self, runtime: &Runtime) {
         (self.register_function)(runtime);

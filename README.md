@@ -36,6 +36,7 @@ In order of priority, from highest to lowest:
 * **Text Rendering** - `gui-tools` can already render images. I'd think that if we use [`fontdue`](https://crates.io/crates/fontdue) to render vector images this should be a relatively simple process.
 * **Appkit Backend** - [AppKit](https://developer.apple.com/documentation/appkit) is the OSX backend to the GUI toolkit. The [`objc`](https://crates.io/crates/objc) crate is probably the best way to interface with this. [XQuartz](https://www.xquartz.org/) exists but we shouldn't rely on its existence.
 * **DOM Backend** - Given the progress that's being made with WebAssembly, there should be a way to directly interface with the DOM at some point in the future. Barring that, we can just call the JS functions with something like [`wasm-bindgen`](https://crates.io/crates/wasm-bindgen).
+* **GL Rendering** - Most toolkits support using OpenGL as an alternative to native, CPU-based forms of rendering. Implementing this would make rendering much faster.
 * **Async Support** - I want `gui-tools` to have support for the asynchronous ecosystem. This would be feature-gated, of course; I don't want `gui-tools` to be 100% async.
 * **BSD** - The X11 backend will probably work for all of the versions of BSD out there. We just need to make sure that it does; most CI services don't really have a BSD option.
 * **Reduce Unsafe** - There's a lot more unsafe code in this crate than there probably needs to be.

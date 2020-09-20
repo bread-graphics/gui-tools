@@ -1,6 +1,83 @@
 // MIT/Apache2 License
 
 //! The runtime for the GUI engine.
+//!
+//! The runtime handles several details necessary to `gui-tools`, including:
+//!
+//! * Loading the backend.
+//! * The creation and management of surfaces.
+//! * Polling for events and storing them in the event queue.
+//! * Dispatching events in the event queue.
+//! * Abstracting over runtime-like constructs (e.g. the display connection in X11).
+//!
+//! `gui-tools` programs will likely start by instantiating a runtime, and end with calling
+//! the runtime's main loop function.
+//!
+//! # Creating a Runtime
+//!
+//! Runtimes are often created with the [`Runtime::new`] function.
+//!
+//! ```no_run
+//! use gui_tools::runtime::Runtime;
+//!
+//! let runtime = Runtime::new().unwrap();
+//! ```
+//!
+//! However, the inner details of creation vary based upon which features are enabled. The `Runtime` struct
+//! is implemented as a pointer to a `RuntimeInternal` struct, which contains all of the real details of the
+//! runtime.
+//!
+//! * If the `alloc` feature is enabled (i.e. an allocator is present), `Runtime` is implemented as a
+//!   transparent wrapper around an `Arc<RuntimeInternal>`. The `RuntimeInternal` is stored in the heap.
+//!   Therefore, one can create as many runtimes as they want.
+//! * If the `alloc` feature is not enabled (i.e. an allocator is not present), `Runtime` is implemented
+//!   as a pointer to a static memory location containing the `RuntimeInternal`. Because of this, only
+//!   one runtime can be created.
+//!
+//! In either case, the `Runtime` struct is cheaply clonable, and its clone will refer to the same runtime.
+//!
+//! Note that the [`Runtime::from_backend`] function can also be used to create runtimes with a specific
+//! backend.
+//!
+//! # Event Management
+//!
+//! In the course of the main loop, the Runtime polls for events and dispatches them. However, if you want
+//! to operate on these events before they are dispatched, add a "peeker".
+//!
+//! A peeker is a function that takes the runtime and the event being "peeked" at as parameters. It is used
+//! to add functionality to the application. There are two ways to add peekers:
+//!
+//! * Add a static reference to a peeker function via the `Runtime::add_peeker` method.
+//!
+//! ```no_run
+//! # use gui_tools::runtime::Runtime;
+//! # let runtime = Runtime::new().unwrap();
+//! use gui_tools::{error::Result, event::Event};
+//!
+//! fn peeker(_runtime: &Runtime, event: &Event) -> crate::Result<()> {
+//!      println!("Processing event: {:?}", event);
+//!      Ok(())
+//! }
+//!
+//! runtime.add_peeker(&peeker);
+//!
+//! runtime.run().unwrap();
+//! ```
+//!
+//! * If the `alloc` feature is enabled, use a closure as a peeker via the `Runtime::add_peeker_owned` method.
+//!
+//! ```no_run
+//! # use gui_tools::runtime::Runtime;
+//! # let runtime = Runtime::new().unwrap();
+//! runtime.add_peeker_owned(|_r, event| {
+//!     println!("Processing event: {:?}", event);
+//!     Ok(())
+//! });
+//!
+//! runtime.run().unwrap();
+//! ```
+//!
+//! The `Runtime::run` function begins the event loop.
 
 use crate::{
     backend::{
@@ -46,6 +123,8 @@ static GLOBAL_RUNTIME: OnceCell<RuntimeInternal> = OnceCell::uninit();
 
 #[cfg(not(feature = "alloc"))]
 /// The runtime for the GUI engine.
+///
+/// See the module-level documentation for more information.
 pub struct Runtime {
     _private: (),
 }
@@ -53,6 +132,8 @@ pub struct Runtime {
 #[cfg(feature = "alloc")]
 #[repr(transparent)]
 /// The runtime for the GUI engine.
+///
+/// See the module-level documentation for more information.
 pub struct Runtime(Arc<RuntimeInternal>);
 
 fn new_inner_runtime(backend: Backend) -> crate::Result<RuntimeInternal> {
@@ -107,7 +188,8 @@ impl Peeker {
     }
 }
 
-#[doc(hidden)]
+/// The internal runtime that the `Runtime` struct points to. You will probably not need to interact
+/// with this.
 pub struct RuntimeInternal {
     // the system-specific display object
     sys: RuntimeInner,
@@ -159,7 +241,17 @@ impl Runtime {
         Ok(Self { _private: () })
     }
 
-    /// Create a new runtime.
+    /// Create a new runtime. This automatically selects a backend based upon system resources available. If this
+    /// is not desirable for you, consider using [`Runtime::from_backend`] instead.
+    ///
+    /// # Errors
+    ///
+    /// If no backend was able to be loaded, this function will return `Error::NoBackendFound`.
+    ///
+    /// If the `alloc` feature is not enabled and the user attempts to create a second runtime,
+    /// this function will return `Error::RuntimeDuplication`.
+    ///
+    /// If an error occurs in the backend, it will be propogated to this function.
     #[inline]
     pub fn new() -> crate::Result<Self> {
         let backend = match select_backend() {
@@ -169,7 +261,15 @@ impl Runtime {
         Self::from_backend(backend)
     }
 
-    /// Create a new runtime from a specific backend.
+    /// Create a new runtime using a specific backend. If you have already decided on a backend for yourself,
+    /// use this function to create the runtime.
+    ///
+    /// # Errors
+    ///
+    /// If the `alloc` feature is not enabled and the user attempts to create a second runtime,
+    /// this function will return `Error::RuntimeDuplication`.
+    ///
+    /// If an error occurs in the backend, it will be propogated to this function.
     #[inline]
     pub fn from_backend(backend: Backend) -> crate::Result<Self> {
         let this = Self::new_impl(backend)?;
@@ -227,16 +327,20 @@ impl Runtime {
         self.inner().sys.as_win32()
     }
 
+    /// Get the index of the default monitor.
     #[inline]
     pub fn default_monitor_index(&self) -> usize {
         self.inner().default_monitor
     }
 
+    /// Get a reference to the default monitor.
     #[inline]
     pub fn default_monitor(&self) -> Option<&Monitor> {
         self.inner().sys.monitor_at(self.inner().default_monitor)
     }
 
+    /// Given a unique surface ID, returns a reference to the surface. Note that this immutably locks the mutex
+    /// holding the list of surfaces.
     #[inline]
     pub fn surface_at(
         &self,
@@ -249,13 +353,19 @@ impl Runtime {
         }
     }
 
-    /// The current graphics framework associated with this runtime.
+    /// The type of backend used with this runtime.
     #[inline]
     pub fn ty(&self) -> BackendType {
         self.inner().backend.ty()
     }
 
     /// Create a new surface using a set of window properties.
+    ///
+    /// This creates a surface using the specified properties, and inserts it into the surface list.
+    ///
+    /// # Errors
+    ///
+    /// Any errors created by the backend are propogated to this function.
     #[inline]
     pub fn create_surface(&self, properties: SurfaceInitialization) -> crate::Result<usize> {
         let window = Surface::new(self, properties)?;
@@ -304,7 +414,26 @@ impl Runtime {
         Ok(true)
     }
 
-    /// Run an iteration of the event loop.
+    /// Run an iteration of the event loop. If the user wants more control of the event loop, they can call
+    /// this function in a loop. Note that one iteration is not guaranteed to correspond to one event. Returns
+    /// Ok(false) if the loop should be stopped. In addition, the preferred way of handling events is to use
+    /// peekers.
+    ///
+    /// # Errors
+    ///
+    /// Any errors created by the backend or the peekers are propogated to this function.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use gui_tools::runtime::Runtime;
+    ///
+    /// let runtime = Runtime::new().unwrap();
+    ///
+    /// while runtime.run_iteration().unwrap() {
+    ///     println!("One event loop iteration has passed...");
+    /// }
+    /// ```
     #[inline]
     pub fn run_iteration(&self) -> crate::Result<bool> {
         log::debug!("Running an iteration of the event loop.");
@@ -336,7 +465,8 @@ impl Runtime {
         self.dispatch_event(ev)
     }
 
-    /// Add a peeker to this runtime.
+    /// Add a peeker to this runtime. This function accepts a static reference to a peeker. If it is
+    /// easier to pass a closure to this runtime, consider using `Runtime::add_peeker_owned`.
     #[inline]
     pub fn add_peeker(
         &self,
@@ -345,7 +475,7 @@ impl Runtime {
         self.inner().peekers.write().push(Peeker::Unowned(peeker))
     }
 
-    /// Add an owned peeker to this runtime.
+    /// Add an owned peeker to this runtime. This accepts closures, unlike `Runtime::add_peeker`.
     #[cfg(feature = "alloc")]
     #[inline]
     pub fn add_peeker_owned<F>(&self, peeker: F)
@@ -358,7 +488,8 @@ impl Runtime {
         ))
     }
 
-    /// Run this event loop.
+    /// Run this event loop. This loop polls for events, takes an event from the event queue, runs the peeker
+    /// functions on that event, and then dispatches the event.
     #[inline]
     pub fn run(&self) -> crate::Result<()> {
         log::info!("Beginning the event loop...");
@@ -369,6 +500,7 @@ impl Runtime {
     }
 }
 
+/// The backend of the runtime. Backend implementors should implement this trait for the runtime.
 #[cfg_attr(feature = "async", async_trait::async_trait)]
 pub trait RuntimeBackend {
     /// Serve an event (or list of events), blocking the current execution thread.

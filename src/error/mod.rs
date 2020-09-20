@@ -1,5 +1,7 @@
 // MIT/Apache2 License
 
+//! Error handling mechanisms.
+
 use core::{fmt, num::TryFromIntError};
 
 mod x11;
