@@ -14,7 +14,8 @@ See the `examples` directory for some example programs.
 
 ## Backends
 
-* `xlib` - 
+* `xlib` - The X11 window system present on Linux and most non-OSX Unixes. At the moment, only Linux support is enabled.
+* `win32` - The Windows API present on most Windows installations.
 
 ## Goals
 
