@@ -1,0 +1,27 @@
+trigger:
+  branches:
+    include: ['*']
+
+jobs:
+ - job:
+   displayName: "Build & Test"
+   strategy:
+     matrix:
+       Linux:
+         toolchain: nightly
+         vmImage: ubuntu-latest
+       Windows:
+         toolchain: nightly
+         wmImage: windows-2019
+   pool:
+     vmImage: ubuntu-latest
+   steps:
+    - template: ci/install-rust.yml
+      parameters:
+        toolchain: $(toolchain)
+    - script: rustup component add clippy
+      displayName: "Add Clippy"
+    - bash: cargo test
+      displayName: "Basic Test"
+    - bash: cargo build --examples
+      displayName: "Build Examples"
