@@ -20,7 +20,7 @@ See the `examples` directory for some example programs.
 ## Goals
 
 * **Portability** - `gui-tools` aims to not only be usable on most computers, but provide consistent results on all of those computers. An app that looks one way on Windows should look the same on Linux.
-* **Compatibility** - `gui-tools` is a `#![no_std]` crate (although both of the currently supported backends both require the C standard library). The idea is to reduce headaches intrinsic in porting `gui-tools` somewhere else.
+* **Compatibility** - `gui-tools` is a `#![no_std]` crate (although both of the currently supported backends both require the C standard library). In addition to this, it is able to be used without an allocator (although its performance and memory usage in this case is probably much worse). The idea is to reduce headaches intrinsic in porting `gui-tools` somewhere else.
 * **Ease of Use** - The API of `gui-tools` should be intuitive enough to not have to constantly refer back to the docs.
 * **Unopinionated** - `gui-tools` is just a set of tools for building GUIs. The toolkits that use `gui-tools` should not be constrained by any of `gui-tools`'s design decisions.
 * **Fast** - `gui-tools` should preform well enough to the point where it isn't the slowest part of a non-trivial application.
