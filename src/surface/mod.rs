@@ -1,5 +1,15 @@
 // MIT/Apache2 License
 
+//! Surfaces, in the most technical definition, are rectangles of pixels that can contain other rectangles
+//! of pixels, and be drawn into. Surfaces are the building blocks of `gui-tools`.
+//! 
+//! # What is a surface?
+//! 
+//! Imagine a computer monitor.
+//!
+//! <div>
+//! </div>
+
 use crate::{
     backend::{win32::Win32Surface, x11::X11Surface, SurfaceInner},
     color::{colors, Rgba},
@@ -127,6 +137,8 @@ impl SurfaceInitialization {
 }
 
 /// A rectangle of pixels on the screen. This object is the primary building block of GUIs in `gui-tools`.
+/// 
+/// See the module-level documentation for further information.
 pub struct Surface {
     properties: ShimRwLock<SurfaceProperties>,
     internal: SurfaceInner,
