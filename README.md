@@ -29,6 +29,7 @@ See the `examples` directory for some example programs.
 
 In order of priority, from highest to lowest:
 
+* **Publish to crates.io** - This package uses a version of [`winapi`](https://crates.io/crates/winapi) from git that contains functions not yet merged into the main `winapi` crate. Once [`winapi#599`](https://github.com/retep998/winapi-rs/pull/599) is merged, this should no longer be an issue.
 * **Unpin from Nightly** - At the moment, `gui-tools` is pinned to the Nightly version of the Rust compiler. Once `min_const_generics` and `const_fn` are stabilized, this should be relatively easy.
 * **Document API** - A lot of items in the API don't have good documentation of how they work.
 * **`image-rs` Support** - I'd like to add some kind of `From<image_rs::RgbImage>` for the `gui_tools::image::Image` struct, to make image loading easier.
