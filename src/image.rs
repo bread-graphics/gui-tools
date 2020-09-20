@@ -2,8 +2,10 @@
 
 use crate::{color::Rgba, geometry::Pixel};
 use core::{
+    any::TypeId,
     hash::{Hash, Hasher},
     ops::Div,
+    ptr::NonNull,
     sync::atomic::{AtomicUsize, Ordering},
 };
 use euclid::Size2D;
@@ -15,16 +17,16 @@ use alloc::sync::Arc;
 /// The color space for an image.
 #[derive(Copy, Clone, Debug, Hash)]
 pub enum ColorSpace {
-    Rgba,
+    Argb,
     Rgb,
     Grayscale,
 }
 
 impl ColorSpace {
     #[inline]
-    fn size(self) -> usize {
+    pub fn size(self) -> usize {
         match self {
-            Self::Rgba => 4,
+            Self::Argb => 4,
             Self::Rgb => 3,
             Self::Grayscale => 1,
         }
@@ -44,6 +46,17 @@ pub enum ImageData<T: 'static> {
     /// A smart pointer to bytes representing a bitmap image.
     #[cfg(feature = "alloc")]
     OwnedPointer(Arc<[T]>),
+}
+
+impl<T: 'static> ImageData<T> {
+    #[inline]
+    pub fn as_ptr(&self) -> *const [T] {
+        match self {
+            Self::Reference(r) => (*r) as *const _,
+            #[cfg(feature = "alloc")]
+            Self::OwnedPointer(ref op) => Arc::as_ptr(op),
+        }
+    }
 }
 
 impl<T: Hash + 'static> Hash for ImageData<T> {
@@ -74,6 +87,9 @@ pub struct Image<T: 'static> {
 pub trait GenericImage {
     /// Get the color space of this image.
     fn color_space(&self) -> ColorSpace;
+
+    /// Get the size of the image component.
+    fn img_cmp_sizeof(&self) -> usize;
 
     /// Get the length of this image in raw elements.
     fn len_elements(&self) -> usize;
@@ -111,15 +127,26 @@ pub trait GenericImage {
 
     /// Get a unique ID associated with this image.
     fn id(&self) -> usize;
+
+    /// If possible, get a pointer to the raw bytes.
+    fn raw_bytes(&self) -> Option<*const u8>;
+
+    /// Write the bytes of an item to a mutable slice.
+    fn write_raw_bytes(&self, bytes: &mut [u8]) -> crate::Result<()>;
 }
 
 impl<T> GenericImage for Image<T>
 where
-    T: AsPrimitive<f32> + Bounded + Div + 'static,
+    T: AsPrimitive<f32> + Bounded + Clone + Div + 'static,
 {
     #[inline]
     fn color_space(&self) -> ColorSpace {
         self.color_space
+    }
+
+    #[inline]
+    fn img_cmp_sizeof(&self) -> usize {
+        core::mem::size_of::<T>()
     }
 
     #[inline]
@@ -140,12 +167,12 @@ where
             }
         }
 
-        match self.color_space.size() {
-            1 => {
+        match self.color_space {
+            ColorSpace::Grayscale => {
                 let element = element_at(self.data(), index)?;
                 Some(unsafe { Rgba::new_unchecked(element, element, element, 1.0) })
             }
-            3 => Some(unsafe {
+            ColorSpace::Rgb => Some(unsafe {
                 Rgba::new_unchecked(
                     element_at(self.data(), index)?,
                     element_at(self.data(), index + 1)?,
@@ -153,12 +180,12 @@ where
                     1.0,
                 )
             }),
-            4 => Some(unsafe {
+            ColorSpace::Argb => Some(unsafe {
                 Rgba::new_unchecked(
-                    element_at(self.data(), index)?,
                     element_at(self.data(), index + 1)?,
                     element_at(self.data(), index + 2)?,
                     element_at(self.data(), index + 3)?,
+                    element_at(self.data(), index)?,
                 )
             }),
             _ => unreachable!(),
@@ -173,6 +200,33 @@ where
     #[inline]
     fn id(&self) -> usize {
         self.id
+    }
+
+    #[inline]
+    fn raw_bytes(&self) -> Option<*const u8> {
+        if TypeId::of::<T>() == TypeId::of::<u8>() {
+            Some(self.as_ptr().cast())
+        } else {
+            None
+        }
+    }
+
+    #[inline]
+    fn write_raw_bytes(&self, bytes: &mut [u8]) -> crate::Result<()> {
+        #[inline]
+        fn clamp_element<T: AsPrimitive<f32> + Bounded + Div>(data: T) -> u8 {
+            ((data.as_() / T::max_value().as_()) * (core::u8::MAX as f32)) as u8
+        }
+
+        if bytes.len() < self.len_elements() {
+            Err(crate::Error::NoSpaceForImage)
+        } else {
+            self.data()
+                .iter()
+                .enumerate()
+                .for_each(|(i, d)| bytes[i] = clamp_element(d.clone()));
+            Ok(())
+        }
     }
 }
 
@@ -245,5 +299,10 @@ impl<T: 'static> Image<T> {
             #[cfg(feature = "alloc")]
             ImageData::OwnedPointer(ref op) => &*op,
         }
+    }
+
+    #[inline]
+    pub fn as_ptr(&self) -> *const [T] {
+        self.data.as_ptr()
     }
 }

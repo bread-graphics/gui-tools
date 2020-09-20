@@ -8,6 +8,8 @@
 //!
 //! * xlib - The X11 library commonly used on Unix and Unix-like platforms. Should work for Linux, as well as
 //! BSD variants and possibly MacOS.
+//! * win32 - The Win32 API for Windows that is also available via Wine and ReactOS. Should work for Windows,
+//! minimum version has not been tested.
 //!
 //! ## Examples
 //!
@@ -27,7 +29,9 @@
 //!    to reduce their size. Requires the `std` feature.
 
 #![no_std]
+#![feature(const_float_classify)]
 #![feature(const_fn)]
+#![feature(const_fn_union)]
 #![feature(maybe_uninit_uninit_array)]
 #![feature(ptr_internals)]
 #![warn(clippy::pedantic)]

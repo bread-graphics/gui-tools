@@ -8,11 +8,13 @@ pub mod x11drawable;
 mod x11error;
 mod x11event;
 mod x11monitor;
+mod x11pixmap;
 mod x11runtime;
 mod x11surface;
 
 pub use x11error::*;
 pub use x11monitor::*;
+pub use x11pixmap::*;
 pub use x11runtime::*;
 pub use x11surface::*;
 

@@ -1,6 +1,6 @@
 // MIT/Apache2 License
 
-use super::{window_proc::window_procedure, Win32Monitor};
+use super::{window_proc::window_procedure, Win32ImageStorage, Win32Monitor};
 use crate::{
     event::{Event, EventType},
     monitor::Monitor,
@@ -16,11 +16,13 @@ use core::{
 use storagevec::StorageVec;
 use winapi::{
     shared::{
+        basetsd::ULONG_PTR,
         minwindef::{BOOL, FALSE, LPARAM, TRUE, UINT},
         ntdef::CHAR,
         windef::{HDC, HMONITOR, LPRECT},
     },
     um::{
+        gdiplusinit::{self, GdiplusStartupInput},
         libloaderapi, wingdi,
         winuser::{self, MONITORINFO, MSG, WNDCLASSEXA},
     },
@@ -33,6 +35,8 @@ pub struct Win32Runtime {
     stored_events: Mutex<StorageVec<Event, 5>>,
     stored_error: Mutex<Option<crate::Error>>,
     window_class_init: Mutex<bool>,
+    startup_token: ULONG_PTR,
+    images: Win32ImageStorage,
 }
 
 // a function used to help get the list of monitors
@@ -98,7 +102,17 @@ impl Win32Runtime {
         {
             return Err(crate::win32error("EnumDisplayMonitors"));
         }
-        //        unsafe { &mut *monitors.get() }.push(Win32Monitor::from_raw(1280, 720, true));
+
+        // initialize GDI+
+        let startup_input: MaybeUninit<GdiplusStartupInput> = MaybeUninit::zeroed();
+        let mut startup_token: MaybeUninit<ULONG_PTR> = MaybeUninit::uninit();
+        unsafe {
+            gdiplusinit::GdiplusStartup(
+                startup_token.as_mut_ptr(),
+                startup_input.as_ptr(),
+                ptr::null_mut(),
+            )
+        };
 
         // TODO: commctrl
         let monitors = monitors.into_inner();
@@ -109,8 +123,15 @@ impl Win32Runtime {
                 stored_events: Mutex::new(StorageVec::new()),
                 stored_error: Mutex::new(None),
                 window_class_init: Mutex::new(false),
+                startup_token: unsafe { startup_token.assume_init() },
+                images: Win32ImageStorage::new(),
             },
         ))
+    }
+
+    #[inline]
+    pub fn image_storage(&self) -> &Win32ImageStorage {
+        &self.images
     }
 
     #[inline]

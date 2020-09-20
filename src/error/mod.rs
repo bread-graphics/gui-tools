@@ -20,6 +20,8 @@ pub use win32::Win32Error;
 pub enum Error {
     /// An unsupported operation has occurred on the core version.
     CoreUnsupported(&'static str),
+    /// Unimplemented feature.
+    Unimplemented(&'static str),
     /// An X11 error has occurred.
     X11(X11Error),
     /// A Win32 error has occurred.
@@ -28,6 +30,8 @@ pub enum Error {
     TryFromInt(TryFromIntError),
     /// An invalid value was set to a color element.
     InvalidColorElement(f32),
+    /// Unable to fit image in allocated bytes.
+    NoSpaceForImage,
     /// No usable backend was found.
     NoBackendFound,
     /// A method from the No-op backend was called.
@@ -62,10 +66,12 @@ impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::CoreUnsupported(s) => f.write_str(s),
+            Self::Unimplemented(s) => write!(f, "Unimplemented feature: {}", s),
             Self::X11(ref x) => fmt::Display::fmt(x, f),
             Self::Win32(ref w) => fmt::Display::fmt(w, f),
             Self::TryFromInt(ref tfi) => fmt::Display::fmt(tfi, f),
             Self::InvalidColorElement(fl) => write!(f, "Invalid color element: {}", fl),
+            Self::NoSpaceForImage => f.write_str("Unable to allocate enough space for an image"),
             Self::NoBackendFound => {
                 f.write_str("Unable to find an applicable backend for the runtime")
             }

@@ -24,6 +24,7 @@ pub enum X11Error {
     BadInputContext,
     BadGraphicsContext,
     NoKeysymFound,
+    BadImage,
     ErrorEventThrown {
         serial: c_ulong,
         error_code: c_ulong,
@@ -67,6 +68,7 @@ impl fmt::Display for X11Error {
             Self::BadInputMethod => f.write_str("The input method was null"),
             Self::BadInputContext => f.write_str("The input context was null"),
             Self::BadGraphicsContext => f.write_str("The graphics context for a window was null"),
+            Self::BadImage => f.write_str("The image format was invalid for X11"),
             Self::NoKeysymFound => f.write_str("The input event did not contain a key symbol"),
             #[cfg(not(feature = "alloc"))]
             Self::Status { code } => write!(f, "An X11 function failed with status {}", code),

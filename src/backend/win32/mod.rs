@@ -3,14 +3,16 @@
 use super::{Backend, BackendType, RuntimeInner, SurfaceInner};
 use crate::{runtime::Runtime, surface::SurfaceInitialization};
 
-pub(crate) mod gdi;
+pub(crate) mod win32draw;
 mod win32event;
+mod win32image;
 mod win32monitor;
 mod win32runtime;
 mod win32surface;
 pub(crate) mod window_proc;
 
 pub(crate) use win32event::*;
+pub use win32image::*;
 pub use win32monitor::*;
 pub use win32runtime::*;
 pub use win32surface::*;

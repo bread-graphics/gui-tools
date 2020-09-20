@@ -1,6 +1,6 @@
 // MIT/Apache2 License
 
-use super::{X11ErrorTrap, X11Monitor};
+use super::{PixmapStorage, X11ErrorTrap, X11Monitor};
 use crate::error::x11_status_to_res;
 use crate::{
     color::Rgba,
@@ -72,6 +72,9 @@ pub struct X11Runtime {
 
     // default monitor ID
     default_monitor: c_int,
+
+    // pixmap storage
+    pixmap_storage: PixmapStorage,
 }
 
 impl X11Runtime {
@@ -189,6 +192,7 @@ impl X11Runtime {
             input_method,
             color_ids: RwLock::new(StorageMap::new()),
             default_monitor: default_screen,
+            pixmap_storage: PixmapStorage::new(),
         };
 
         // SAFETY: C function that returns an integer, we check it for validity
@@ -298,6 +302,11 @@ impl X11Runtime {
                 Ok(xcolor.pixel)
             }
         }
+    }
+
+    #[inline]
+    pub(crate) fn pixmap_storage(&self) -> &PixmapStorage {
+        &self.pixmap_storage
     }
 }
 

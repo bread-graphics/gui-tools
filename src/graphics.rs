@@ -3,6 +3,7 @@
 use crate::{
     color::Rgba,
     geometry::{GeometricArc, Pixel, Rectangle},
+    image::GenericImage,
 };
 use core::{fmt, ptr::NonNull};
 use euclid::{point2, Angle, Point2D, Size2D};
@@ -189,6 +190,15 @@ pub trait GraphicsInternal {
             .collect::<StorageVec<GeometricArc, 100>>();
         self.fill_arcs(&arcs)
     }
+
+    fn image(
+        &self,
+        image: &dyn GenericImage,
+        origin_x: i32,
+        origin_y: i32,
+        clip_width: u32,
+        clip_height: u32,
+    ) -> crate::Result<()>;
 }
 
 /// The API for drawing 2D graphics.
@@ -334,6 +344,26 @@ impl Graphics {
     #[inline]
     pub fn fill_ellipses(&self, rects: &[Rectangle]) -> crate::Result<()> {
         self.internal().fill_ellipses(rects)
+    }
+
+    /// Draw an image.
+    #[inline]
+    pub fn image<Backend: GenericImage, Source: AsRef<Backend>>(
+        &self,
+        source: &Source,
+        origin_x: i32,
+        origin_y: i32,
+        clip_width: Option<u32>,
+        clip_height: Option<u32>,
+    ) -> crate::Result<()> {
+        let img = source.as_ref();
+        self.internal().image(
+            img,
+            origin_x,
+            origin_y,
+            clip_width.unwrap_or_else(|| img.width() as _),
+            clip_height.unwrap_or_else(|| img.height() as _),
+        )
     }
 }
 

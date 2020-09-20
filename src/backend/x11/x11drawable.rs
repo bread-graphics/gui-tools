@@ -6,6 +6,7 @@ use crate::{
     error::x11_status_to_res,
     geometry::{GeometricArc, Pixel, Rectangle},
     graphics::GraphicsInternal,
+    image::GenericImage,
     runtime::Runtime,
 };
 use core::{convert::TryInto, mem::MaybeUninit, num::TryFromIntError, ptr::NonNull};
@@ -20,6 +21,7 @@ pub trait X11Drawable {
     fn display(&self) -> NonNull<Display>;
     fn gc(&self) -> NonNull<_XGC>;
     fn runtime(&self) -> &Runtime;
+    fn monitor(&self) -> c_int;
 }
 
 impl X11Drawable for X11Surface {
@@ -38,6 +40,10 @@ impl X11Drawable for X11Surface {
     #[inline]
     fn runtime(&self) -> &Runtime {
         X11Surface::runtime(self)
+    }
+    #[inline]
+    fn monitor(&self) -> c_int {
+        0
     }
 }
 
@@ -291,6 +297,39 @@ impl<T: X11Drawable> GraphicsInternal for T {
                 self.gc().as_ptr(),
                 arcs.as_mut_ptr(),
                 arcs.len() as c_int,
+            )
+        })
+    }
+
+    #[inline]
+    fn image(
+        &self,
+        image: &dyn GenericImage,
+        x: i32,
+        y: i32,
+        origin_width: u32,
+        origin_height: u32,
+    ) -> crate::Result<()> {
+        // create the pixmap
+        let xpixmap = self
+            .runtime()
+            .as_x11()
+            .unwrap()
+            .pixmap_storage()
+            .register_image(image, self.runtime(), self.monitor())?;
+
+        x11_status_to_res(self.display(), unsafe {
+            xlib::XCopyArea(
+                self.display().as_ptr(),
+                self.xid(),
+                xpixmap.inner(),
+                self.gc().as_ptr(),
+                0,
+                0,
+                origin_width,
+                origin_height,
+                x,
+                y,
             )
         })
     }

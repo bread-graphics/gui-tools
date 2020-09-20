@@ -5,8 +5,9 @@ authors = ["not_a_seagull <jtnunley01@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-ahash = "0.4.4"
+ahash = "0.3.8"
 async-trait = { version = "0.1.38", optional = true }
+atomic_float = "0.1.0"
 conquer-once = { version = "0.2.1", default-features = false }
 crossbeam-queue = { version = "0.2.3", optional = true }
 cty = { version = "0.2.1" }
@@ -20,7 +21,7 @@ ordered-float = "2.0.0"
 owning_ref = "0.4.1"
 spinning_top = { version = "0.2.2", features = ["nightly", "owning_ref"] }
 spinny = { version = "0.2.0", features = ["nightly", "owning_ref"] }
-storagevec = { version = "0.1.5", default-features = false }
+storagevec = { version = "0.1.6", default-features = false }
 tokio = { version = "0.2.22", features = ["rt-core"], optional = true }
 
 [dev-dependencies]
@@ -31,13 +32,10 @@ version = "2.19.0"
 features = ["xlib"]
 default-features = false
 
-[build-dependencies]
-cc = "1.0.60"
-
 [target.'cfg(windows)'.dependencies.winapi]
 git = "https://github.com/Jarcho/winapi-rs"
 branch = "gdiplus"
-features = ["libloaderapi", "minwindef", "windef", "errhandlingapi", "winuser", "ntdef", "windowsx"]
+features = ["gdiplusinit", "gdiplusflat", "gdiplustypes", "libloaderapi", "minwindef", "windef", "errhandlingapi", "winuser", "ntdef", "windowsx", "winbase", "objidlbase"]
 
 [features]
 default = ["std"]

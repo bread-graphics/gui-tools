@@ -3,7 +3,8 @@
 //! Utilities for creating and modifying colors. This exports the `Rgba` type, which
 //! represents an RGBA color made up of four floats.
 
-use core::fmt;
+use atomic_float::AtomicF32;
+use core::{fmt, sync::atomic::Ordering};
 use num_traits::{AsPrimitive, Bounded};
 use ordered_float::NotNan;
 
@@ -14,8 +15,8 @@ struct FloatClamp(NotNan<f32>);
 
 impl FloatClamp {
     #[inline]
-    fn new(val: f32) -> crate::Result<Self> {
-        if val.is_nan() || !(0.0f32..=1.0f32).contains(&val) {
+    const fn new(val: f32) -> crate::Result<Self> {
+        if val.is_nan() || 0.0f32 > val || 1.0f32 < val {
             Err(crate::Error::InvalidColorElement(val))
         } else {
             // SAFETY: confirmed to be safe
@@ -29,8 +30,14 @@ impl FloatClamp {
     }
 
     #[inline]
-    fn inner(self) -> f32 {
-        self.0.into_inner()
+    const fn inner(self) -> f32 {
+        union ConstTransmuter {
+            notnan: NotNan<f32>,
+            real: f32,
+        }
+
+        let c = ConstTransmuter { notnan: self.0 };
+        unsafe { c.real }
     }
 }
 
@@ -150,7 +157,7 @@ impl Rgba {
 
     /// Get the red component of this color.
     #[inline]
-    pub fn r(&self) -> f32 {
+    pub const fn r(&self) -> f32 {
         self.0.inner()
     }
 
@@ -174,7 +181,7 @@ impl Rgba {
 
     /// Get the green component of this color.
     #[inline]
-    pub fn g(&self) -> f32 {
+    pub const fn g(&self) -> f32 {
         self.1.inner()
     }
 
@@ -198,7 +205,7 @@ impl Rgba {
 
     /// Get the blue component of this color.
     #[inline]
-    pub fn b(&self) -> f32 {
+    pub const fn b(&self) -> f32 {
         self.2.inner()
     }
 
@@ -222,7 +229,7 @@ impl Rgba {
 
     /// Get the alpha component of this color.
     #[inline]
-    pub fn a(&self) -> f32 {
+    pub const fn a(&self) -> f32 {
         self.3.inner()
     }
 
@@ -293,6 +300,41 @@ impl Rgba {
             cvt!(self.b(), T),
             cvt!(self.a(), T),
         )
+    }
+}
+
+/// An atomic container for a color.
+pub struct AtomicRgba(AtomicF32, AtomicF32, AtomicF32, AtomicF32);
+
+impl AtomicRgba {
+    #[inline]
+    pub fn new(rgba: Rgba) -> Self {
+        Self(
+            AtomicF32::new(rgba.r()),
+            AtomicF32::new(rgba.g()),
+            AtomicF32::new(rgba.b()),
+            AtomicF32::new(rgba.a()),
+        )
+    }
+
+    #[inline]
+    pub fn load(&self, ordering: Ordering) -> Rgba {
+        unsafe {
+            Rgba::new_unchecked(
+                self.0.load(ordering),
+                self.1.load(ordering),
+                self.2.load(ordering),
+                self.3.load(ordering),
+            )
+        }
+    }
+
+    #[inline]
+    pub fn store(&self, rgba: Rgba, ordering: Ordering) {
+        self.0.store(rgba.r(), ordering);
+        self.1.store(rgba.g(), ordering);
+        self.2.store(rgba.b(), ordering);
+        self.3.store(rgba.a(), ordering);
     }
 }
 

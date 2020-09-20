@@ -32,47 +32,17 @@ use spinning_top::{Spinlock as Mutex, SpinlockGuard as MutexGuard};
 #[cfg(feature = "alloc")]
 use alloc::{boxed::Box, sync::Arc};
 
+#[cfg(not(feature = "std"))]
+use conquer_once::spin::OnceCell;
+#[cfg(feature = "std")]
+use conquer_once::OnceCell;
+
 #[cfg(feature = "async")]
 use core::future::Future;
 
-// current internal runtime
-// used as a pointer to circumvent allocation
+// on no_std system, store the global runtime in a once cell
 #[cfg(not(feature = "alloc"))]
-struct GlobalRuntime(UnsafeCell<Option<RuntimeInternal>>, Mutex<()>);
-
-#[cfg(not(feature = "alloc"))]
-impl GlobalRuntime {
-    #[inline]
-    const fn new() -> Self {
-        Self(UnsafeCell::new(None), Mutex::new(()))
-    }
-}
-
-#[cfg(not(feature = "alloc"))]
-unsafe impl Send for GlobalRuntime {}
-#[cfg(not(feature = "alloc"))]
-unsafe impl Sync for GlobalRuntime {}
-
-#[cfg(not(feature = "alloc"))]
-static GLOBAL_RUNTIME: GlobalRuntime = GlobalRuntime::new();
-
-#[cfg(not(feature = "alloc"))]
-impl GlobalRuntime {
-    #[inline]
-    unsafe fn inner(&self) -> &Option<RuntimeInternal> {
-        &*self.0.get()
-    }
-
-    #[inline]
-    unsafe fn inner_mut(&self) -> &mut Option<RuntimeInternal> {
-        &mut *self.0.get()
-    }
-
-    #[inline]
-    unsafe fn get_lock(&self) -> MutexGuard<'_, ()> {
-        self.1.lock()
-    }
-}
+static GLOBAL_RUNTIME: OnceCell<RuntimeInternal> = OnceCell::uninit();
 
 #[cfg(not(feature = "alloc"))]
 /// The runtime for the GUI engine.
@@ -171,7 +141,7 @@ impl Runtime {
     #[cfg(not(feature = "alloc"))]
     #[inline]
     pub(crate) unsafe fn global() -> Self {
-        assert!(GLOBAL_RUNTIME.inner().is_some());
+        assert!(GLOBAL_RUNTIME.is_initialized());
         Self { _private: () }
     }
 
@@ -184,14 +154,7 @@ impl Runtime {
     #[cfg(not(feature = "alloc"))]
     #[inline]
     fn new_impl(backend: Backend) -> crate::Result<Self> {
-        let _spinny = unsafe { GLOBAL_RUNTIME.get_lock() };
-
-        // SAFETY: we have the spinny lock, we have exclusive access to the unsafe cell
-        if let None = unsafe { GLOBAL_RUNTIME.inner() } {
-            *unsafe { GLOBAL_RUNTIME.inner_mut() } = Some(new_inner_runtime(backend)?);
-        } else {
-            return Err(crate::Error::RuntimeDuplication);
-        }
+        GLOBAL_RUNTIME.init_once(|| new_runtime_inner(backend).unwrap());
 
         Ok(Self { _private: () })
     }
@@ -226,7 +189,7 @@ impl Runtime {
     #[inline]
     #[cfg(not(feature = "alloc"))]
     pub(crate) fn into_ptr(self) -> *const RuntimeInernal {
-        unsafe { GLOBAL_RUNTIME.inner() }.as_ref().unwrap()
+        GLOBAL_RUNTIME.get().unwrap()
     }
 
     #[inline]
@@ -238,22 +201,20 @@ impl Runtime {
     #[inline]
     #[cfg(not(feature = "alloc"))]
     pub(crate) unsafe fn from_ptr(ptr: *const RuntimeInternal) -> Self {
-        assert!(ptr as *const _ == GLOBAL_RUNTIME.inner().as_ref().unwrap() as *const _);
+        assert!(ptr as *const _ == GLOBAL_RUNTIME.get().unwrap() as *const _);
         Self { private: () }
     }
 
     #[cfg(feature = "alloc")]
     #[inline]
     fn inner(&self) -> &RuntimeInternal {
-        log::debug!("Borrowing inner lock immutably");
         &*self.0
     }
 
     #[cfg(not(feature = "alloc"))]
     #[inline]
     fn inner(&self) -> &RuntimeInternal {
-        // SAFETY: the only time global_runtime_mut is called is during initialization
-        unsafe { GLOBAL_RUNTIME.inner() }.as_ref().unwrap()
+        GLOBAL_RUNTIME.get().unwrap()
     }
 
     #[inline]
