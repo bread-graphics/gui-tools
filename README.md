@@ -38,3 +38,7 @@ In order of priority, from highest to lowest:
 * **Async Support** - I want `gui-tools` to have support for the asynchronous ecosystem. This would be feature-gated, of course; I don't want `gui-tools` to be 100% async.
 * **BSD** - The X11 backend will probably work for all of the versions of BSD out there. We just need to make sure that it does; most CI services don't really have a BSD option.
 * **Reduce Unsafe** - There's a lot more unsafe code in this crate than there probably needs to be.
+
+## License
+
+`gui-tools` is dual-licensed under the MIT License and the Apache 2.0 License. For more information, see the `LICENSE-MIT` and `LICENSE-Apache` files in the root of the repository.

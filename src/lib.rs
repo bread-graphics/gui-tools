@@ -29,11 +29,9 @@
 //!    to reduce their size. Requires the `std` feature.
 
 #![no_std]
-#![feature(const_float_classify)]
 #![feature(const_fn)]
 #![feature(const_fn_union)]
 #![feature(maybe_uninit_uninit_array)]
-#![feature(ptr_internals)]
 #![warn(clippy::pedantic)]
 
 #[cfg(feature = "alloc")]

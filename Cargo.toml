@@ -3,6 +3,10 @@ name = "gui-tools"
 version = "0.0.1"
 authors = ["not_a_seagull <jtnunley01@gmail.com>"]
 edition = "2018"
+repository = "https://github.com/not-a-seagull/gui-tools"
+homepage = "https://github.com/not-a-seagull/gui-tools#readme"
+keywords = ["gui"]
+license = "MIT OR Apache-2.0"
 
 [dependencies]
 ahash = "0.3.8"
@@ -43,3 +47,6 @@ alloc = ["hashbrown", "storagevec/alloc"]
 async = ["std", "async-trait", "futures-lite", "tokio"]
 pl = ["std", "parking_lot"]
 std = ["alloc", "euclid/std", "conquer-once/std", "crossbeam-queue", "num-traits/std"]
+
+[badges]
+azure-devops = { project = "jtnunley01/gui-tools", pipeline = "not-a-seagull.gui-tools" }

@@ -15,7 +15,7 @@ struct FloatClamp(NotNan<f32>);
 
 impl FloatClamp {
     #[inline]
-    const fn new(val: f32) -> crate::Result<Self> {
+    fn new(val: f32) -> crate::Result<Self> {
         if val.is_nan() || 0.0f32 > val || 1.0f32 < val {
             Err(crate::Error::InvalidColorElement(val))
         } else {

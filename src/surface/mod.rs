@@ -126,7 +126,7 @@ impl SurfaceInitialization {
     }
 }
 
-/// A rectangle of pixels on the screen.
+/// A rectangle of pixels on the screen. This object is the primary building block of GUIs in `gui-tools`.
 pub struct Surface {
     properties: ShimRwLock<SurfaceProperties>,
     internal: SurfaceInner,
