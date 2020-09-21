@@ -163,7 +163,7 @@ impl Clone for Runtime {
 
     #[cfg(not(feature = "alloc"))]
     fn clone(&self) -> Self {
-        Self
+        Self { _private: () }
     }
 }
 
@@ -249,7 +249,7 @@ impl Runtime {
     #[cfg(not(feature = "alloc"))]
     #[inline]
     fn new_impl(backend: Backend) -> crate::Result<Self> {
-        GLOBAL_RUNTIME.init_once(|| new_runtime_inner(backend).unwrap());
+        GLOBAL_RUNTIME.init_once(|| new_inner_runtime(backend).unwrap());
 
         Ok(Self { _private: () })
     }
@@ -301,7 +301,7 @@ impl Runtime {
 
     #[inline]
     #[cfg(not(feature = "alloc"))]
-    pub(crate) fn into_ptr(self) -> *const RuntimeInernal {
+    pub(crate) fn into_ptr(self) -> *const RuntimeInternal {
         GLOBAL_RUNTIME.get().unwrap()
     }
 
@@ -315,7 +315,7 @@ impl Runtime {
     #[cfg(not(feature = "alloc"))]
     pub(crate) unsafe fn from_ptr(ptr: *const RuntimeInternal) -> Self {
         assert!(ptr as *const _ == GLOBAL_RUNTIME.get().unwrap() as *const _);
-        Self { private: () }
+        Self { _private: () }
     }
 
     #[cfg(feature = "alloc")]

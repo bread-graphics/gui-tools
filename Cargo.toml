@@ -43,10 +43,10 @@ features = ["gdiplusinit", "gdiplusflat", "gdiplustypes", "libloaderapi", "minwi
 
 [features]
 default = ["std"]
-alloc = ["hashbrown", "storagevec/alloc"]
+alloc = ["crossbeam-queue", "hashbrown", "storagevec/alloc"]
 async = ["std", "async-trait", "futures-lite", "tokio"]
 pl = ["std", "parking_lot"]
-std = ["alloc", "euclid/std", "conquer-once/std", "crossbeam-queue", "num-traits/std"]
+std = ["alloc", "crossbeam-queue/std", "euclid/std", "conquer-once/std", "num-traits/std"]
 
 [badges]
 azure-devops = { project = "jtnunley01/gui-tools", pipeline = "not-a-seagull.gui-tools" }

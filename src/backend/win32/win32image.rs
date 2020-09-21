@@ -51,7 +51,7 @@ impl ImageStoredData {
             #[cfg(feature = "alloc")]
             Self::Boxed(ref mut b) => &mut *b,
             #[cfg(not(feature = "alloc"))]
-            Self::Array(ref mut a) => &mut a,
+            Self::Array(ref mut a) => a,
         }
     }
 

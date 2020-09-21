@@ -23,5 +23,11 @@ jobs:
       displayName: "Add Clippy"
     - bash: cargo test
       displayName: "Basic Test"
+    - bash: cargo test --no-default-features
+      displayName: "Core Test"
+    - bash: cargo test --no-default-features --features alloc
+      displayName: "Alloc Test"
+    - bash: cargo test --features pl
+      displayName: "parking_lot Test"
     - bash: cargo build --examples
       displayName: "Build Examples"

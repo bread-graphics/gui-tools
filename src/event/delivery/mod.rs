@@ -8,8 +8,6 @@ use core::task::Waker;
 #[cfg(feature = "alloc")]
 pub mod alloc_delivery;
 pub mod core_delivery;
-#[cfg(feature = "std")]
-pub mod threaded_delivery;
 
 /// A mechanism for delivering events.
 #[cfg_attr(feature = "async", async_trait::async_trait)]
@@ -38,7 +36,3 @@ pub type DefaultEventDelivery = core_delivery::CoreEventDelivery;
 /// The default event delivery system, used in the runtime.
 #[cfg(feature = "alloc")]
 pub type DefaultEventDelivery = alloc_delivery::AllocEventDelivery;
-
-///// The default event delivery system, used in the runtime.
-//#[cfg(feature = "std")]
-//pub type DefaultEventDelivery = threaded_delivery::ThreadedEventDelivery;
