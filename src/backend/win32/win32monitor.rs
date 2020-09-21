@@ -4,6 +4,7 @@ use crate::monitor::Monitor;
 use core::{convert::TryInto, ops::Deref};
 use winapi::um::winuser::{self, MONITORINFO};
 
+#[derive(Default)]
 pub struct Win32Monitor {
     monitor: Monitor,
     primary: bool,

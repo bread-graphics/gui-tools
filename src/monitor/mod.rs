@@ -1,6 +1,7 @@
 // MIT/Apache2 License
 
 /// The physical monitor.
+#[derive(Default)]
 pub struct Monitor {
     // dimensions of this monitor
     width: u32,

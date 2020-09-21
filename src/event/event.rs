@@ -20,6 +20,7 @@ use core::any::Any;
 /// of an EventType can be acquired via the `ty()` method.
 #[derive(Debug, Copy, Clone)]
 pub enum EventTypeMask {
+    NoOp,
     Resized,
     Moved,
     MouseDown,
@@ -36,11 +37,20 @@ pub enum EventTypeMask {
     Str(&'static str),
 }
 
+impl Default for EventTypeMask {
+    #[inline]
+    fn default() -> Self {
+        Self::NoOp
+    }
+}
+
 /// The type of the event. This should be a unique value that can be used to identify a "class" of
 /// events. It should also be able to contain some arguments associated with the event, in order
 /// to ensure arguments are able to be kept on the stack.
 #[derive(Debug)]
 pub enum EventType {
+    /// No-op event.
+    NoOp,
     /// This widget has been resized.
     Resized {
         old: Size2D<u32, Pixel>,
@@ -77,6 +87,13 @@ pub enum EventType {
     Str(&'static str),
 }
 
+impl Default for EventType {
+    #[inline]
+    fn default() -> Self {
+        Self::NoOp
+    }
+}
+
 unsafe impl Send for EventType {}
 unsafe impl Sync for EventType {}
 
@@ -85,6 +102,7 @@ impl EventType {
     #[inline]
     pub fn ty(&self) -> EventTypeMask {
         match self {
+            Self::NoOp => EventTypeMask::NoOp,
             Self::Resized { .. } => EventTypeMask::Resized,
             Self::Moved { .. } => EventTypeMask::Moved,
             Self::MouseUp(_, _) => EventTypeMask::MouseUp,
@@ -125,6 +143,13 @@ pub struct Event {
     is_terminator: bool,
     // skip the peeker loop for this event?
     skip_peeker: bool,
+}
+
+impl Default for Event {
+    #[inline]
+    fn default() -> Self {
+        Self::new(EventType::NoOp, None)
+    }
 }
 
 impl fmt::Debug for Event {

@@ -26,6 +26,24 @@ pub struct X11Monitor {
 
     screen_id: c_int,
     root_window: xlib::Window,
+    _valid: bool,
+}
+
+impl Default for X11Monitor {
+    #[inline]
+    fn default() -> Self {
+        Self {
+            parent_object: Default::default(),
+            screen: NonNull::dangling(),
+            display: NonNull::dangling(),
+            visuals: None,
+            default_visual: None,
+            rgba_visual: None,
+            screen_id: Default::default(),
+            root_window: Default::default(),
+            _valid: false,
+        }
+    }
 }
 
 impl X11Monitor {
@@ -91,6 +109,7 @@ impl X11Monitor {
             visuals: None,
             default_visual: None,
             rgba_visual: None,
+            _valid: true,
         };
 
         log::debug!("Setting up X11Monitor visual members");

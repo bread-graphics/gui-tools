@@ -16,6 +16,13 @@ pub enum X11VisualType {
     DirectColor,
 }
 
+impl Default for X11VisualType {
+    #[inline]
+    fn default() -> Self {
+        Self::StaticGrayscale
+    }
+}
+
 #[derive(PartialEq, Eq, PartialOrd, Ord)]
 pub struct X11Visual {
     // sort by depth, then type
@@ -25,6 +32,19 @@ pub struct X11Visual {
     bits_per_rgb: i32,
     color_mask: (u32, u32, u32),
     visual: NonNull<Visual>,
+}
+
+impl Default for X11Visual {
+    #[inline]
+    fn default() -> Self {
+        Self {
+            depth: Default::default(),
+            ty: Default::default(),
+            bits_per_rgb: Default::default(),
+            color_mask: Default::default(),
+            visual: NonNull::dangling(),
+        }
+    }
 }
 
 impl X11Visual {

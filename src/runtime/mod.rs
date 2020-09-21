@@ -190,6 +190,17 @@ impl Peeker {
     }
 }
 
+fn default_peeker(_runtime: &Runtime, _event: &Event) -> crate::Result<EventLoopAction> {
+    Ok(EventLoopAction::Continue)
+}
+
+impl Default for Peeker {
+    #[inline]
+    fn default() -> Self {
+        Self::Unowned(&default_peeker)
+    }
+}
+
 /// The internal runtime that the `Runtime` struct points to. You will probably not need to interact
 /// with this.
 pub struct RuntimeInternal {
