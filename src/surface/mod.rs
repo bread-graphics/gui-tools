@@ -248,6 +248,7 @@ impl SurfaceInitialization {
             background_color,
             border_color,
             border_width,
+            #[cfg(feature = "alloc")]
             user_data,
             ..
         } = self;
@@ -257,7 +258,10 @@ impl SurfaceInitialization {
         sp.background_color = background_color;
         sp.border_color = border_color;
         sp.border_width = border_width;
-        sp.user_data = user_data;
+        #[cfg(feature = "alloc")]
+        {
+            sp.user_data = user_data;
+        }
         sp
     }
 }
@@ -426,6 +430,7 @@ impl Surface {
     }
 
     /// Get the user data associated with this surface. This can be anything related to the surface.
+    #[cfg(feature = "alloc")]
     #[inline]
     pub fn user_data(
         &self,
@@ -441,6 +446,7 @@ impl Surface {
 
     /// Get a mutable reference to the user data associated with this surface. This can be anything related
     /// to the surface.
+    #[cfg(feature = "alloc")]
     #[inline]
     pub fn user_data_mut(
         &mut self,
@@ -450,13 +456,17 @@ impl Surface {
         let p = self.properties.read();
         if p.user_data.is_some() {
             mem::drop(p);
-            Some(OwningRefMut::new(self.properties.write()).map_mut(|p| p.user_data.as_deref_mut().unwrap()))
+            Some(
+                OwningRefMut::new(self.properties.write())
+                    .map_mut(|p| p.user_data.as_deref_mut().unwrap()),
+            )
         } else {
             None
         }
     }
 
     /// Set the user data associated with this surface.
+    #[cfg(feature = "alloc")]
     #[inline]
     pub fn set_user_data<T: Any + Send + Sync + 'static>(
         &mut self,
