@@ -433,7 +433,7 @@ impl Surface {
     {
         let p = self.properties.read();
         if p.user_data.is_some() {
-            Some(OwningRef::new(p).map(|p| &p.user_data))
+            Some(OwningRef::new(p).map(|p| p.user_data.as_deref().unwrap()))
         } else {
             None
         }
@@ -450,7 +450,7 @@ impl Surface {
         let p = self.properties.read();
         if p.user_data.is_some() {
             mem::drop(p);
-            Some(OwningRefMut::new(self.properties.write()).map_mut(|p| &mut p.user_data));
+            Some(OwningRefMut::new(self.properties.write()).map_mut(|p| p.user_data.as_deref_mut().unwrap()))
         } else {
             None
         }
@@ -462,7 +462,7 @@ impl Surface {
         &mut self,
         item: T,
     ) -> Option<Box<dyn Any + Send + Sync + 'static>> {
-        self.properties.write().replace(Box::new(item))
+        self.properties.write().user_data.replace(Box::new(item))
     }
 }
 
