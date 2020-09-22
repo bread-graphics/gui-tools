@@ -121,16 +121,22 @@ use crate::{
     event::EventTypeMask,
     geometry::Rectangle,
     graphics::GraphicsInternal,
-    mutex::ShimRwLock,
+    mutex::{RwLockReadGuard, RwLockWriteGuard, ShimRwLock},
     runtime::Runtime,
     string::CoolString,
 };
 use core::{mem, ptr::NonNull};
+use owning_ref::{OwningRef, OwningRefMut};
 use storagevec::StorageVec;
 
 mod starting_point;
 
 pub use starting_point::StartingPoint;
+
+#[cfg(feature = "alloc")]
+use alloc::boxed::Box;
+#[cfg(feature = "alloc")]
+use core::any::Any;
 
 /// The properties that a surface can hold.
 #[derive(Debug)]
@@ -147,6 +153,10 @@ pub struct SurfaceProperties {
     pub background_color: Rgba,
     pub border_color: Rgba,
     pub border_width: u32,
+
+    /// User data to be attached to a surface. This can be anything.
+    #[cfg(feature = "alloc")]
+    pub user_data: Option<Box<dyn Any + Send + Sync + 'static>>,
 }
 
 /// The properties that a surface is initialized with.
@@ -163,6 +173,10 @@ pub struct SurfaceInitialization {
     pub background_color: Rgba,
     pub border_color: Rgba,
     pub border_width: u32,
+
+    /// User data to be attached to a surface. This can be anything.
+    #[cfg(feature = "alloc")]
+    pub user_data: Option<Box<dyn Any + Send + Sync + 'static>>,
 }
 
 impl SurfaceProperties {
@@ -187,6 +201,8 @@ impl SurfaceProperties {
             background_color: colors::WHITE,
             border_color: colors::BLACK,
             border_width: 0,
+            #[cfg(feature = "alloc")]
+            user_data: None,
         }
     }
 }
@@ -212,6 +228,8 @@ impl SurfaceInitialization {
             background_color: colors::WHITE,
             border_color: colors::BLACK,
             border_width: 0,
+            #[cfg(feature = "alloc")]
+            user_data: None,
         }
     }
 
@@ -230,6 +248,7 @@ impl SurfaceInitialization {
             background_color,
             border_color,
             border_width,
+            user_data,
             ..
         } = self;
         let mut sp = SurfaceProperties::new(parent, x, y, width, height, title);
@@ -238,13 +257,14 @@ impl SurfaceInitialization {
         sp.background_color = background_color;
         sp.border_color = border_color;
         sp.border_width = border_width;
+        sp.user_data = user_data;
         sp
     }
 }
 
 /// A rectangle of pixels on the screen. This object is the primary building block of GUIs in `gui-tools`.
 ///
-/// See the module-level documentation for further information.
+/// See the [module-level documentation](index.html) for further information.
 pub struct Surface {
     properties: ShimRwLock<SurfaceProperties>,
     internal: SurfaceInner,
@@ -403,6 +423,46 @@ impl Surface {
     #[inline]
     pub fn invalidate(&self, rect: Option<Rectangle>) -> crate::Result<()> {
         self.internal.invalidate(rect)
+    }
+
+    /// Get the user data associated with this surface. This can be anything related to the surface.
+    #[inline]
+    pub fn user_data(
+        &self,
+    ) -> Option<OwningRef<RwLockReadGuard<'_, SurfaceProperties>, dyn Any + Send + Sync + 'static>>
+    {
+        let p = self.properties.read();
+        if p.user_data.is_some() {
+            Some(OwningRef::new(p).map(|p| &p.user_data))
+        } else {
+            None
+        }
+    }
+
+    /// Get a mutable reference to the user data associated with this surface. This can be anything related
+    /// to the surface.
+    #[inline]
+    pub fn user_data_mut(
+        &mut self,
+    ) -> Option<
+        OwningRefMut<RwLockWriteGuard<'_, SurfaceProperties>, dyn Any + Send + Sync + 'static>,
+    > {
+        let p = self.properties.read();
+        if p.user_data.is_some() {
+            mem::drop(p);
+            Some(OwningRefMut::new(self.properties.write()).map_mut(|p| &mut p.user_data));
+        } else {
+            None
+        }
+    }
+
+    /// Set the user data associated with this surface.
+    #[inline]
+    pub fn set_user_data<T: Any + Send + Sync + 'static>(
+        &mut self,
+        item: T,
+    ) -> Option<Box<dyn Any + Send + Sync + 'static>> {
+        self.properties.write().replace(Box::new(item))
     }
 }
 

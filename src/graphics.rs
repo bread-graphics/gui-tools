@@ -1,5 +1,8 @@
 // MIT/Apache2 License
 
+//! This module provides the API for drawing things. For more information, see the documentation for the
+//! [`Graphics`](struct.Graphics.html) object.
+
 use crate::{
     color::Rgba,
     geometry::{GeometricArc, Pixel, Rectangle},
@@ -204,12 +207,21 @@ pub trait GraphicsInternal {
 /// The API for drawing 2D graphics.
 ///
 /// This object acts as a common interface between the user and the various graphics APIs
-/// of the native backend libraries.
+/// of the native backend libraries. It allows one to draw basic shapes, draw images, and render
+/// strings of text.
+///
+/// This object should not be instantiated directly. The preferred source of `Graphics` structs is the
+/// [`EventType::Paint`](../event/enum.EventType.html) variant provided during the runtime. If a repaint is
+/// needed, it is recommended to call [`Surface::invalidate`](../surface/index.html) and then use a peeker
+/// on the `EventType::Paint` listener.
+#[repr(transparent)]
 pub struct Graphics {
     internal: NonNull<dyn GraphicsInternal>,
 }
 
 impl Graphics {
+    /// Create a new `Graphics` struct based upon a pointer to an internal graphics object. It is not
+    /// recommended to use this; see above for preferred instantiation of `Graphics`.
     #[inline]
     pub fn new(internal: NonNull<dyn GraphicsInternal>) -> Self {
         Self { internal }
