@@ -1,6 +1,6 @@
 // MIT/Apache2 License
 
-#![cfg(target_os = "linux")]
+#![cfg(unix)]
 
 pub mod visual;
 pub(crate) mod x11displaymanager;

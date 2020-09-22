@@ -23,7 +23,7 @@ jobs:
       displayName: "Add Clippy"
     - bash: cargo test
       displayName: "Basic Test"
-    - bash: cargo test --no-default-features
+    - bash: cargo test
       displayName: "Core Build"
     - bash: cargo build --no-default-features --features alloc
       displayName: "Alloc Build"

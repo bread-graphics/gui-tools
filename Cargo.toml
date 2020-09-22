@@ -31,7 +31,7 @@ tokio = { version = "0.2.22", features = ["rt-core"], optional = true }
 [dev-dependencies]
 env_logger = "0.7.1"
 
-[target.'cfg(target_os = "linux")'.dependencies.x11nas]
+[target.'cfg(unix)'.dependencies.x11nas]
 version = "2.19.1"
 features = ["xlib"]
 default-features = false

@@ -14,10 +14,10 @@ pub(crate) use selector::*;
 mod storage;
 pub use storage::*;
 
-#[cfg(target_os = "linux")]
+#[cfg(unix)]
 pub mod x11;
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(unix))]
 pub mod x11 {
     pub use super::noop::{
         noop_backend_selector as x11_backend_selector, NoOpRuntime as X11Runtime,

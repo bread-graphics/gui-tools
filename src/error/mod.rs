@@ -5,7 +5,7 @@
 use core::{fmt, num::TryFromIntError};
 
 mod x11;
-#[cfg(target_os = "linux")]
+#[cfg(unix)]
 pub(crate) use x11::x11_status_to_res;
 pub use x11::X11Error;
 

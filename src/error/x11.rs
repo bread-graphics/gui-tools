@@ -3,7 +3,7 @@
 use core::{fmt, ptr::NonNull};
 use cty::{c_char, c_int, c_uchar, c_ulong};
 
-#[cfg(target_os = "linux")]
+#[cfg(unix)]
 use x11nas::xlib;
 
 #[cfg(feature = "alloc")]
@@ -83,13 +83,13 @@ impl fmt::Display for X11Error {
 }
 
 // convert a status to an x11 error
-#[cfg(all(target_os = "linux", not(feature = "alloc")))]
+#[cfg(all(unix, not(feature = "alloc")))]
 #[inline]
 fn x11_status_to_err(_dpy: NonNull<xlib::Display>, status: c_int) -> crate::Error {
     X11Error::Status { code: status }.into()
 }
 
-#[cfg(all(target_os = "linux", feature = "alloc"))]
+#[cfg(all(unix, feature = "alloc"))]
 #[inline]
 fn x11_status_to_err(dpy: NonNull<xlib::Display>, status: c_int) -> crate::Error {
     const BUFFER_SIZE: usize = 100;
@@ -112,7 +112,7 @@ fn x11_status_to_err(dpy: NonNull<xlib::Display>, status: c_int) -> crate::Error
     .into()
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(unix)]
 #[inline]
 pub(crate) fn x11_status_to_res(dpy: NonNull<xlib::Display>, status: c_int) -> crate::Result<()> {
     if status == 1 || status == 0 {
