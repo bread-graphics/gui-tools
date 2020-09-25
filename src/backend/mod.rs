@@ -36,8 +36,19 @@ pub mod win32 {
     };
 }
 
+#[cfg(target_os = "macos")]
+pub mod appkit;
+
+#[cfg(not(target_os = "macos"))]
+pub mod appkit {
+    pub use super::noop::{
+        noop_backend_selector as appkit_backend_selector, NoOpRuntime as AppkitRuntime,
+        NoOpSurface as AppkitSurface,
+    };
+}
+
 /// The backing library used by the backend.
-#[derive(Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum BackendType {
     X11,
     Win32,
@@ -59,6 +70,25 @@ pub struct Backend {
         &'static dyn Fn(&Runtime, &SurfaceInitialization) -> crate::Result<SurfaceInner>,
     pub suppress_peeker_loop: bool,
 }
+
+impl PartialEq for Backend {
+    #[inline]
+    fn eq(&self, other: &Self) -> bool {
+        macro_rules! ptr_eq {
+            ($p1: expr, $p2: expr) => {{
+                $p1 as *const _ == $p2 as *const _
+            }};
+        }
+
+        self.ty == other.ty
+            && ptr_eq!(self.open_function, other.open_function)
+            && ptr_eq!(self.register_function, other.register_function)
+            && ptr_eq!(self.surface_function, other.surface_function)
+            && self.suppress_peeker_loop == other.suppress_peeker_loop
+    }
+}
+
+impl Eq for Backend {}
 
 impl Backend {
     /// Create a new runtime by some functions.

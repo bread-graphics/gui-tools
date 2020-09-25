@@ -3,19 +3,19 @@
 use super::EventDelivery;
 use crate::{event::Event, mutex::ShimMutex as Mutex};
 use core::task::Waker;
-use storagevec::StorageVec;
+use tinydeque::ArrayDeque;
 
 /// A simple event delivery mechanism for the package running on libcore.
 #[repr(transparent)]
 pub struct CoreEventDelivery {
-    members: Mutex<StorageVec<Event, 12>>,
+    members: Mutex<TinyDeque<[Event, 12]>>,
 }
 
 impl EventDelivery for CoreEventDelivery {
     #[inline]
     fn new() -> Self {
         Self {
-            members: Mutex::new(StorageVec::new()),
+            members: Mutex::new(TinyDeque::new()),
         }
     }
 

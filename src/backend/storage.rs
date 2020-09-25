@@ -4,6 +4,7 @@
 use alloc::boxed::Box;
 
 use super::{
+    appkit::{AppkitRuntime, AppkitSurface},
     win32::{Win32Runtime, Win32Surface},
     x11::{X11Runtime, X11Surface},
 };
@@ -22,6 +23,7 @@ use storagevec::StorageVec;
 pub enum RuntimeInner {
     X11(X11Runtime),
     Win32(Win32Runtime),
+    Appkit(AppkitRuntime),
     #[cfg(feature = "alloc")]
     Other(Box<dyn RuntimeBackend>),
 }
@@ -32,6 +34,7 @@ impl RuntimeInner {
         match self {
             Self::X11(ref x) => x as _,
             Self::Win32(ref w) => w as _,
+            Self::Appkit(ref a) => a as _,
             #[cfg(feature = "alloc")]
             Self::Other(ref b) => &**b,
         }
@@ -88,6 +91,7 @@ impl RuntimeBackend for RuntimeInner {
 pub enum SurfaceInner {
     X11(X11Surface),
     Win32(Win32Surface),
+    Appkit(AppkitSurface),
     #[cfg(feature = "alloc")]
     Other(Box<dyn SurfaceBackend>),
 }
@@ -98,6 +102,7 @@ impl SurfaceInner {
         match self {
             Self::X11(ref x) => x,
             Self::Win32(ref w) => w,
+            Self::Appkit(ref a) => a,
             #[cfg(feature = "alloc")]
             Self::Other(ref b) => &**b,
         }

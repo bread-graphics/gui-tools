@@ -20,8 +20,10 @@ use winapi::{
         minwindef::{BOOL, FALSE, LPARAM, TRUE, UINT},
         ntdef::CHAR,
         windef::{HDC, HMONITOR, LPRECT},
+        winerror,
     },
     um::{
+        errhandlingapi,
         gdiplusinit::{self, GdiplusStartupInput},
         libloaderapi, wingdi,
         winuser::{self, MONITORINFO, MSG, WNDCLASSEXA},
@@ -153,10 +155,11 @@ impl Win32Runtime {
     // create the window class that gets used for every window
     #[inline]
     pub fn create_window_class(&self) -> crate::Result<NonNull<CHAR>> {
+        let retval = Ok(unsafe { NonNull::new_unchecked(WINDOW_CLASS_NAME as *mut CHAR) });
         let mut wc_lock = self.window_class_init.lock();
 
         if *wc_lock {
-            return Ok(unsafe { NonNull::new_unchecked(WINDOW_CLASS_NAME as *mut CHAR) });
+            return retval;
         }
 
         // create the window class
@@ -181,11 +184,16 @@ impl Win32Runtime {
 
         // register the window class
         if unsafe { winuser::RegisterClassExA(&window_class) } == 0 {
-            return Err(crate::win32error("RegisterClassExA"));
+            // we're all good if the window class has already been created
+            if unsafe { errhandlingapi::GetLastError() } == winerror::ERROR_CLASS_ALREADY_EXISTS {
+                // just continue
+            } else {
+                return Err(crate::win32error("RegisterClassExA"));
+            }
         }
 
         *wc_lock = true;
-        Ok(unsafe { NonNull::new_unchecked(WINDOW_CLASS_NAME as *mut CHAR) })
+        retval
     }
 }
 

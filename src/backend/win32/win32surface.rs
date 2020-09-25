@@ -17,7 +17,7 @@ use core::{
     ptr::{self, NonNull},
     sync::atomic::{AtomicPtr, Ordering},
 };
-use cty::c_int;
+use cty::{c_char, c_int};
 use winapi::{
     ctypes::c_void,
     shared::{
@@ -101,11 +101,12 @@ impl Win32Surface {
         mem::drop(wruntime);
 
         // create the window proper
+        let title = str_into_buffer(&init.title);
         let hwnd = unsafe {
             winuser::CreateWindowExA(
                 winuser::WS_EX_CLIENTEDGE,
                 class_name.as_ref(),
-                init.title.as_bytes().as_ptr() as *const CHAR,
+                title.as_ptr() as *const CHAR,
                 winuser::WS_OVERLAPPEDWINDOW,
                 x,
                 y,
@@ -212,6 +213,20 @@ impl Win32Surface {
     pub(crate) fn runtime(&self) -> &Runtime {
         &self.runtime
     }
+}
+
+// helper function to take a string and put it into a buffer
+#[inline]
+fn str_into_buffer(text: &str) -> [c_char; 1024] {
+    let mut buffer: [c_char; 1024] = [0; 1024];
+    unsafe {
+        ptr::copy(
+            text.as_ptr().cast(),
+            buffer.as_mut_ptr(),
+            text.as_bytes().len(),
+        )
+    };
+    buffer
 }
 
 impl SurfaceBackend for Win32Surface {

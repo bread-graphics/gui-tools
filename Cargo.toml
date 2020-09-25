@@ -26,6 +26,7 @@ owning_ref = "0.4.1"
 spinning_top = { version = "0.2.2", features = ["nightly", "owning_ref"] }
 spinny = { version = "0.2.0", features = ["nightly", "owning_ref"] }
 storagevec = { version = "0.2.0", default-features = false }
+tinydeque = "0.1.0"
 tokio = { version = "0.2.22", features = ["rt-core"], optional = true }
 
 [dev-dependencies]
@@ -39,7 +40,11 @@ default-features = false
 [target.'cfg(windows)'.dependencies.winapi]
 git = "https://github.com/Jarcho/winapi-rs"
 branch = "gdiplus"
-features = ["gdiplusinit", "gdiplusflat", "gdiplustypes", "libloaderapi", "minwindef", "windef", "errhandlingapi", "winuser", "ntdef", "windowsx", "winbase", "objidlbase"]
+features = ["gdiplusinit", "gdiplusflat", "gdiplustypes", "libloaderapi", "minwindef", "windef", "errhandlingapi", "winuser", "ntdef", "windowsx", "winbase", "winerror", "objidlbase"]
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc = "0.2.7"
+objc_exception = "0.1.2"
 
 [features]
 default = ["std"]

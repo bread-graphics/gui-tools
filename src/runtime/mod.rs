@@ -97,7 +97,8 @@ use crate::{
     surface::{Surface, SurfaceInitialization},
 };
 use core::{
-    fmt, mem,
+    fmt,
+    mem::{self, ManuallyDrop},
     sync::atomic::{AtomicBool, Ordering},
 };
 use owning_ref::OwningRef;
@@ -146,7 +147,7 @@ fn new_inner_runtime(backend: Backend) -> crate::Result<RuntimeInternal> {
         delivery: DefaultEventDelivery::new(),
         peekers: ShimRwLock::new(StorageVec::new()),
         default_monitor,
-        surfaces: ShimRwLock::new(StorageMap::new()),
+        surfaces: ManuallyDrop::new(ShimRwLock::new(StorageMap::new())),
         suppress_peeker_loop: AtomicBool::new(backend.suppress_peeker_loop),
         #[cfg(feature = "async")]
         joiner: None,
@@ -216,7 +217,7 @@ pub struct RuntimeInternal {
     default_monitor: usize,
 
     // list of surfaces contained in the SysRuntime
-    surfaces: ShimRwLock<StorageMap<usize, Surface, 25>>,
+    surfaces: ManuallyDrop<ShimRwLock<StorageMap<usize, Surface, 25>>>,
 
     // whether or not to suppress the peeker loop (i.e. it's already been run (i.e. win32))
     suppress_peeker_loop: AtomicBool,
@@ -532,5 +533,12 @@ impl fmt::Debug for Runtime {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("Runtime")
+    }
+}
+
+impl Drop for RuntimeInternal {
+    #[inline]
+    fn drop(&mut self) {
+        unsafe { ManuallyDrop::drop(&mut self.surfaces) };
     }
 }

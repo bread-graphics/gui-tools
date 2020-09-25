@@ -92,27 +92,14 @@ impl X11Surface {
         // create the x11 attributes object
         log::debug!("Creating an XSetWindowAttributes object");
 
-        log::trace!(
-            "C function call: XWhitePixel({:p}, {})",
-            xruntime.display().as_ptr(),
-            screen.screen_id()
-        );
-        let white_pixel =
-            unsafe { xlib::XWhitePixel(xruntime.display().as_ptr(), screen.screen_id()) };
-        log::trace!(
-            "C function call: XBlackPixel({:p}, {})",
-            xruntime.display().as_ptr(),
-            screen.screen_id()
-        );
-        let black_pixel =
-            unsafe { xlib::XBlackPixel(xruntime.display().as_ptr(), screen.screen_id()) };
-        log::trace!("Result of C function call: {}", white_pixel);
+        let background_pixel = xruntime.color_id(props.background_color)?;
+        let border_pixel = xruntime.color_id(props.border_color)?;
 
         log::trace!("Unsafe code: MaybeUninit for partial initialization of XSetWindowAttributes");
         let mut window_attrs: XSetWindowAttributes = XSetWindowAttributes {
-            background_pixel: white_pixel,
-            background_pixmap: 0,
-            border_pixel: black_pixel,
+            background_pixel,
+            background_pixmap: props.border_width.into(),
+            border_pixel,
             bit_gravity: xlib::NorthWestGravity,
             colormap: xruntime.default_colormap.unwrap(),
             //            override_redirect: xlib::True,
