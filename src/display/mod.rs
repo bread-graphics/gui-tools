@@ -3,11 +3,18 @@
 use crate::{
     event::Event,
     screen::{Screen, ScreenIter},
+    surface::SurfaceSum,
     window::{Visibility, Window, WindowProps},
 };
 
+mod sum;
+pub use sum::*;
+
 /// The event handler for a display, called whenever the display has an event to handle.
-pub type EventHandler = Box<dyn Fn(Event<'_>) -> crate::Result + Send + 'static>;
+pub type EventHandler = Box<dyn FnMut(DisplaySumRef<'_>, Event) -> crate::Result + Send + 'static>;
+
+/// Handles drawing for a specific window. Requirements are less strict because it should be display-local.
+pub type DrawHandler<'a> = Box<dyn FnOnce(&mut SurfaceSum<'_>) -> crate::Result + 'a>;
 
 /// A connection to the server that governs GUI interactions. Dropping is assumed to close the connection.
 pub trait Display {
@@ -91,75 +98,40 @@ pub trait Display {
         self.window_set_geometry(window, x, y, width, height)
     }
 
+    /// You shouldn't call this directly, instead use the DisplayExt trait's "window_draw" function.
+    fn window_draw_with_boxed_drawer(
+        &mut self,
+        window: Window,
+        draw: DrawHandler<'_>,
+    ) -> crate::Result;
+
     // events
+    /// You shouldn't call this directly, instead use the DisplayExtOwned trait's "run" function.
     fn run_with_boxed_event_handler(&mut self, f: EventHandler) -> crate::Result;
 }
 
-/// Display extension trait, containing generic items that can't be put in a "dyn Display".
-pub trait DisplayExt {
-    /// Enter this display's main loop with the following event handler function.
-    fn run<F: Fn(Event<'_>) -> crate::Result + 'static>(self, f: F) -> crate::Result;
-}
-
-impl<D: Display> DisplayExt for D {
-    #[inline]
-    fn run<F: Fn(Event<'_>) -> crate::Result + 'static>(mut self, f: F) -> crate::Result {
-        self.run_with_boxed_event_handler(Box::new(f))
-    }
-}
-
-/// An async version of the Display trait.
-#[cfg(feature = "async")]
-pub trait AsyncDisplay {}
-
-/// An enum containing several common members of the Display trait, since enum dispatch is faster. Also provides
-/// a generic "new" function that instantiates the best Display for the given OS.
-pub enum DisplaySum {
-    #[cfg(feature = "breadx")]
-    Breadx(crate::breadx::BreadxDisplayConnection),
-    #[cfg(windows)]
-    Yaww(crate::yaww::YawwDisplay),
-    Dynamic(Box<dyn Display + Send>),
-}
-
-macro_rules! impl_fn_body {
-    ($fname: ident, $self: expr, $($aname: ident),*) => {{
-        match $self {
-            #[cfg(feature = "breadx")]
-            Self::Breadx(b) => b.$fname($($aname),*),
-            #[cfg(windows)]
-            Self::Yaww(y) => y.$fname($($aname),*),
-            Self::Dynamic(d) => d.$fname($($aname),*),
-        }
-    }}
-}
-
-impl Display for DisplaySum {
+// Display can be implemented on &mut Display as well
+impl<'r, D: Display + ?Sized> Display for &'r mut D {
     #[inline]
     fn screens(&mut self) -> crate::Result<ScreenIter<'_>> {
-        impl_fn_body!(screens, self,)
+        (**self).screens()
     }
-
     #[inline]
     fn default_screen(&mut self) -> crate::Result<Screen> {
-        impl_fn_body!(default_screen, self,)
+        (**self).default_screen()
     }
-
     #[inline]
     fn screen_dimensions(&mut self, screen: Screen) -> crate::Result<(u32, u32)> {
-        impl_fn_body!(screen_dimensions, self, screen)
+        (**self).screen_dimensions(screen)
     }
-
     #[inline]
     fn toplevel_window(&mut self, screen: Screen) -> crate::Result<Window> {
-        impl_fn_body!(toplevel_window, self, screen)
+        (**self).toplevel_window(screen)
     }
-
     #[inline]
     fn default_toplevel_window(&mut self) -> crate::Result<Window> {
-        impl_fn_body!(default_toplevel_window, self,)
+        (**self).default_toplevel_window()
     }
-
     #[inline]
     fn create_window(
         &mut self,
@@ -170,31 +142,31 @@ impl Display for DisplaySum {
         parent: Window,
         props: WindowProps,
     ) -> crate::Result<Window> {
-        impl_fn_body!(create_window, self, x, y, width, height, parent, props)
+        (**self).create_window(x, y, width, height, parent, props)
     }
     #[inline]
     fn destroy_window(&mut self, window: Window) -> crate::Result {
-        impl_fn_body!(destroy_window, self, window)
+        (**self).destroy_window(window)
     }
     #[inline]
     fn window_geometry(&mut self, window: Window) -> crate::Result<(i32, i32, u32, u32)> {
-        impl_fn_body!(window_geometry, self, window)
+        (**self).window_geometry(window)
     }
     #[inline]
     fn window_parent(&mut self, window: Window) -> crate::Result<Option<Window>> {
-        impl_fn_body!(window_parent, self, window)
+        (**self).window_parent(window)
     }
     #[inline]
     fn window_size(&mut self, window: Window) -> crate::Result<(u32, u32)> {
-        impl_fn_body!(window_size, self, window)
+        (**self).window_size(window)
     }
     #[inline]
     fn window_coordinates(&mut self, window: Window) -> crate::Result<(i32, i32)> {
-        impl_fn_body!(window_coordinates, self, window)
+        (**self).window_coordinates(window)
     }
     #[inline]
-    fn window_set_visibility(&mut self, window: Window, visibility: Visibility) -> crate::Result {
-        impl_fn_body!(window_set_visibility, self, window, visibility)
+    fn window_set_visibility(&mut self, window: Window, vis: Visibility) -> crate::Result {
+        (**self).window_set_visibility(window, vis)
     }
     #[inline]
     fn window_set_geometry(
@@ -205,18 +177,71 @@ impl Display for DisplaySum {
         width: u32,
         height: u32,
     ) -> crate::Result {
-        impl_fn_body!(window_set_geometry, self, window, x, y, width, height)
+        (**self).window_set_geometry(window, x, y, width, height)
     }
     #[inline]
     fn window_set_size(&mut self, window: Window, width: u32, height: u32) -> crate::Result {
-        impl_fn_body!(window_set_size, self, window, width, height)
+        (**self).window_set_size(window, width, height)
     }
     #[inline]
     fn window_set_coordinates(&mut self, window: Window, x: i32, y: i32) -> crate::Result {
-        impl_fn_body!(window_set_coordinates, self, window, x, y)
+        (**self).window_set_coordinates(window, x, y)
+    }
+    #[inline]
+    fn window_draw_with_boxed_drawer(
+        &mut self,
+        window: Window,
+        draw: DrawHandler<'_>,
+    ) -> crate::Result {
+        (**self).window_draw_with_boxed_drawer(window, draw)
     }
     #[inline]
     fn run_with_boxed_event_handler(&mut self, f: EventHandler) -> crate::Result {
-        impl_fn_body!(run_with_boxed_event_handler, self, f)
+        (**self).run_with_boxed_event_handler(f)
     }
 }
+
+/// Display extension trait, containing generic items that can't be used in dynamic dispatch.
+pub trait DisplayExt {
+    /// Draw on a window using the given function, which will be provided with a `Surface`. Calling this
+    /// outside of a "paint" event handler may have unpredictable results.
+    fn window_draw<F: FnOnce(&mut SurfaceSum<'_>) -> crate::Result>(
+        &mut self,
+        window: Window,
+        f: F,
+    ) -> crate::Result;
+}
+
+impl<D: Display + ?Sized> DisplayExt for D {
+    #[inline]
+    fn window_draw<F: FnOnce(&mut SurfaceSum<'_>) -> crate::Result>(
+        &mut self,
+        window: Window,
+        f: F,
+    ) -> crate::Result {
+        self.window_draw_with_boxed_drawer(window, Box::new(f))
+    }
+}
+
+/// Display extension trait, containing generic items that can't be put in a sized instantiation.
+pub trait DisplayExtOwned {
+    /// Enter this display's main loop with the following event handler function.
+    fn run<F: FnMut(DisplaySumRef<'_>, Event) -> crate::Result + Send + 'static>(
+        self,
+        f: F,
+    ) -> crate::Result;
+}
+
+impl<D: Display> DisplayExtOwned for D {
+    #[inline]
+    fn run<F: FnMut(DisplaySumRef<'_>, Event) -> crate::Result + Send + 'static>(
+        mut self,
+        f: F,
+    ) -> crate::Result {
+        self.run_with_boxed_event_handler(Box::new(f))
+    }
+}
+
+/// An async version of the Display trait.
+#[cfg(feature = "async")]
+pub trait AsyncDisplay {}

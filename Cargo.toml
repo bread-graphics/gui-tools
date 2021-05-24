@@ -10,9 +10,11 @@ license = "MIT OR Apache-2.0"
 
 [dependencies]
 breadx = { path = "../breadx", optional = true }
+cfg-if = "1"
 chalkboard = { path = "../chalkboard", default-features = false }
 
 [target.'cfg(windows)'.dependencies]
+flume = { version = "0.10", default-features = false }
 yaww = { path = "../yaww" }
 
 [features]
