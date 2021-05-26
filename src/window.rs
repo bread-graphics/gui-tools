@@ -23,6 +23,7 @@ impl Window {
 /// Associated properties of a window.
 #[derive(Debug, Clone, PartialEq, Default, Eq, PartialOrd, Ord, Hash)]
 pub struct WindowProps {
+    pub title: Option<String>,
     pub background_color: Option<Color>,
     pub border_color: Option<Color>,
     pub border_width: u32,

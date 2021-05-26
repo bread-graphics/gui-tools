@@ -53,6 +53,7 @@ struct CachedMap {
     colormap: HashMap<chalkboard::Color, u32>,
 }
 
+#[cfg(feature = "xrender")]
 #[derive(Debug)]
 struct XrenderResidual {
     rr: RenderResidual,
@@ -81,9 +82,18 @@ impl<Conn: Connection> BreadxDisplay<Conn> {
     fn display(&self) -> &Display<Conn> {
         self.display.display()
     }
+
     #[inline]
     fn display_mut(&mut self) -> &mut Display<Conn> {
         self.display.display_mut()
+    }
+
+    #[inline]
+    fn cvt_color(&mut self, screen: Screen) -> crate::Result<u32> {
+        let cmap = self.display().default_colormap();
+        let (r, g, b, _) = color.clamp_u16();
+        cmap.alloc_color_immediate(self.display_mut(), r, g, b)?
+            .pixel()
     }
 }
 
@@ -168,29 +178,20 @@ impl GtDisplay for BreadxDisplay<NameConnection> {
         window_props: WindowProps,
     ) -> crate::Result<Window> {
         let WindowProps {
+            title,
             background_color,
             border_color,
             border_width,
         } = window_props;
 
         // todo: figure out the proper screen
-
-        let cmap = self.display().default_colormap();
         let params = WindowParameters {
             background_pixel: Some(match background_color {
-                Some(color) => {
-                    let (r, g, b, _) = color.clamp_u16();
-                    cmap.alloc_color_immediate(self.display_mut(), r, g, b)?
-                        .pixel()
-                }
+                Some(color) => self.cvt_color(color)?,
                 None => self.display().default_white_pixel(),
             }),
             border_pixel: Some(match border_color {
-                Some(color) => {
-                    let (r, g, b, _) = color.clamp_u16();
-                    cmap.alloc_color_immediate(self.display_mut(), r, g, b)?
-                        .pixel()
-                }
+                Some(color) => self.cvt_color(color)?,
                 None => self.display().default_black_pixel(),
             }),
             ..Default::default()
@@ -204,9 +205,14 @@ impl GtDisplay for BreadxDisplay<NameConnection> {
             y.try_into().expect("y"),
             width.try_into().expect("width"),
             height.try_into().expect("height"),
-            border_width.try_into().expect("border_width"),
+            border_width.unwrap_or(0).try_into().expect("border_width"),
             params,
         )?;
+
+        // apply window properties that we haven't used yet
+        if let Some(ref title) = title {
+            window.set_title(self.display_mut(), title)?;
+        }
 
         Ok(Window::from_raw(
             NonZeroU64::new(window.xid.into()).unwrap(),
@@ -230,6 +236,7 @@ impl GtDisplay for BreadxDisplay<NameConnection> {
             height,
             ..
         } = window.geometry_immediate(self.display_mut())?;
+
         Ok((x.into(), y.into(), width.into(), height.into()))
     }
 
@@ -263,6 +270,44 @@ impl GtDisplay for BreadxDisplay<NameConnection> {
     ) -> crate::Result {
         let window = XWindow::const_from_xid(window.into_raw().get() as u32);
         window.move_resize(self.display_mut(), x, y, width, height)?;
+        Ok(())
+    }
+
+    #[inline]
+    fn window_set_properties(&mut self, window: Window, props: WindowProps) -> crate::Result {
+        let window = XWindow::const_from_xid(window.into_raw().get() as u32);
+        let WindowProps {
+            border_width,
+            border_color,
+            background_color,
+            title,
+        } = window;
+
+        if let Some(border_width) = border_width {
+            window.configure(
+                self.display_mut(),
+                ConfigureWindowParameters {
+                    border_width: border_width.try_into().expect("border_width"),
+                    ..Default::default()
+                },
+            )?;
+        }
+
+        if border_color.is_some() || background_color.is_some() {
+            let mut wp = WindowParameters::default();
+            if let Some(border_color) = border_color {
+                wp.border_pixel = self.cvt_color(border_color)?;
+            }
+            if let Some(background_color) = background_color {
+                wp.background_pixel = self.cvt_color(background_color)?;
+            }
+            window.change_attributes(self.display_mut(), wp)?;
+        }
+
+        if let Some(ref title) = title {
+            window.set_title(self.dsiplay_mut(), title)?;
+        }
+
         Ok(())
     }
 

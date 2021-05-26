@@ -109,6 +109,10 @@ impl Display for DisplaySum {
         impl_fn_body!(window_set_geometry, self, window, x, y, width, height)
     }
     #[inline]
+    fn window_set_props(&mut self, window: Window, props: WindowProps) -> crate::Result {
+        impl_fn_body!(window_set_props, self, window, props)
+    }
+    #[inline]
     fn window_set_size(&mut self, window: Window, width: u32, height: u32) -> crate::Result {
         impl_fn_body!(window_set_size, self, window, width, height)
     }

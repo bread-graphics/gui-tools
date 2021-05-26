@@ -99,6 +99,10 @@ impl<'r> Display for DisplaySumRef<'r> {
         impl_fn_body!(window_set_geometry, self, window, x, y, width, height)
     }
     #[inline]
+    fn window_set_properties(&mut self, window: Window, props: WindowProps) -> crate::Result {
+        impl_fn_body!(window_set_properties, self, window, props)
+    }
+    #[inline]
     fn window_set_size(&mut self, window: Window, width: u32, height: u32) -> crate::Result {
         impl_fn_body!(window_set_size, self, window, width, height)
     }

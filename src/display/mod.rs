@@ -84,6 +84,8 @@ pub trait Display {
         width: u32,
         height: u32,
     ) -> crate::Result;
+    /// Set the properties associated with this window.
+    fn window_set_properties(&mut self, window: Window, props: WindowProps) -> crate::Result;
 
     /// Set the size of this window.
     #[inline]
@@ -178,6 +180,10 @@ impl<'r, D: Display + ?Sized> Display for &'r mut D {
         height: u32,
     ) -> crate::Result {
         (**self).window_set_geometry(window, x, y, width, height)
+    }
+    #[inline]
+    fn window_set_properties(&mut self, window: Window, props: WindowProps) -> crate::Result {
+        (**self).window_set_properties(window, props)
     }
     #[inline]
     fn window_set_size(&mut self, window: Window, width: u32, height: u32) -> crate::Result {
