@@ -1,47 +1,47 @@
 // MIT/Apache2 License
 
-use crate::{
-    event::Event,
-    screen::{Screen, ScreenIter},
-    surface::SurfaceSum,
-    window::{Visibility, Window, WindowProps},
-};
+//! This module defines the "display", which represents either the connection to the server or the thread in
+//! which the server is running. Most operations in the `gui-tools` crate take place using the `Display` trait.
+
+use super::Screen;
+use chalkboard::surface::Surface;
 
 mod sum;
 pub use sum::*;
 
-/// The event handler for a display, called whenever the display has an event to handle.
-pub type EventHandler = Box<dyn FnMut(DisplaySumRef<'_>, Event) -> crate::Result + Send + 'static>;
+/// A boxed event handler.
+/// 
+/// TODO: somehow avoid dynamic dispatch here, since the given reference is !Send
+pub type EventHandler<'evh> =
+    Box<dyn FnMut(&mut dyn Display<'evh>, Event) -> crate::Result + Send + 'evh>;
 
-/// Handles drawing for a specific window. Requirements are less strict because it should be display-local.
-pub type DrawHandler<'a> = Box<dyn FnOnce(&mut SurfaceSum<'_>) -> crate::Result + 'a>;
+/// A boxed drawing handler.
+pub type DrawHandler<'draw> = Box<dyn FnOnce(&mut dyn Surface) -> crate::Result + 'draw>;
 
-/// A connection to the server that governs GUI interactions. Dropping is assumed to close the connection.
-pub trait Display {
-    // screen functions
-    /// Get an iterator over the screens provided by this display.
+/// Represents a connection to the server. Most GUI operations take place using this object.
+///
+/// The lifetime represents the lifetime for the event handler.
+pub trait Display<'evh> {
+    /* Screen Functions */
+
+    /// Returns an iterator that provides a list of `Screen`s to the user. The `Screen`s represent the logical
+    /// screens that the `Display` has access to.
     fn screens(&mut self) -> crate::Result<ScreenIter<'_>>;
-    /// Get the default screen.
+    /// Returns the default screen to the user. This screen is considered the "primary" screen, where windows
+    /// should be spawned.
     fn default_screen(&mut self) -> crate::Result<Screen>;
-    /// Get the dimensions for one of the screens.
+    /// Get the dimensions for a specific screen.
     #[inline]
     fn screen_dimensions(&mut self, screen: Screen) -> crate::Result<(u32, u32)> {
-        let w = self.toplevel_window(screen)?;
-        self.window_size(w)
+        let window = self.toplevel_window(screen)?;
+        self.window_size(window)
     }
 
-    // window functions
-    /// Get the top-level window for a given screen.
+    /* Window Creation and Deletion Functions */
+
+    /// Get the toplevel window for a specific `Screen`.
     fn toplevel_window(&mut self, screen: Screen) -> crate::Result<Window>;
-    /// Get the default top-level window.
-    #[inline]
-    fn default_toplevel_window(&mut self) -> crate::Result<Window> {
-        let s = self.default_screen()?;
-        self.toplevel_window(s)
-    }
-
-    /// Create a new window, based on the window's properties. Returns an ID that uniquely identifies that
-    /// window.
+    /// Create a new window.
     fn create_window(
         &mut self,
         x: i32,
@@ -51,32 +51,28 @@ pub trait Display {
         parent: Window,
         props: WindowProps,
     ) -> crate::Result<Window>;
-    /// Destroy or delete a window. The window represented by the given ID will no longer be able to be used
-    /// in order to preform window actions.
-    fn destroy_window(&mut self, window: Window) -> crate::Result;
+    /// Delete a window.
+    fn delete_window(&mut self, window: Window) -> crate::Result;
 
-    /// Get the X coordinate, Y coordinate, width, and height of a given window.
-    fn window_geometry(&mut self, window: Window) -> crate::Result<(i32, i32, u32, u32)>;
-    /// Get the parent of a given window, or None if it is the top level window.
-    fn window_parent(&mut self, window: Window) -> crate::Result<Option<Window>>;
+    /* Window Geometry Functions */
 
-    /// Get the size of the window.
-    #[inline]
-    fn window_size(&mut self, window: Window) -> crate::Result<(u32, u32)> {
-        let (_, _, w, h) = self.window_geometry(window)?;
-        Ok((w, h))
-    }
-    /// Get the coordinates of the window.
+    /// Get the dimensions of a window.
+    fn window_dimensions(&mut self, window: Window) -> crate::Result<Dimensions>;
+    /// Get the coordinates of a window.
     #[inline]
     fn window_coordinates(&mut self, window: Window) -> crate::Result<(i32, i32)> {
-        let (x, y, _, _) = self.window_geometry(window)?;
+        let Dimensions { x, y, .. } = self.window_dimensions(window)?;
+        Ok((x, y))
+    }
+    /// Get the size of a window.
+    #[inline]
+    fn window_size(&mut self, window: Window) -> crate::Result<(u32, u32)> {
+        let Dimensions { width, height, .. } = self.window_dimensions(window)?;
         Ok((x, y))
     }
 
-    /// Set whether or not this window is visible.
-    fn window_set_visibility(&mut self, window: Window, visibility: Visibility) -> crate::Result;
-    /// Set the geometry (x, y, width, height) for this window.
-    fn window_set_geometry(
+    /// Set the dimensions of a window.
+    fn window_set_dimensions(
         &mut self,
         window: Window,
         x: i32,
@@ -84,36 +80,38 @@ pub trait Display {
         width: u32,
         height: u32,
     ) -> crate::Result;
-    /// Set the properties associated with this window.
-    fn window_set_properties(&mut self, window: Window, props: WindowProps) -> crate::Result;
-
-    /// Set the size of this window.
-    #[inline]
-    fn window_set_size(&mut self, window: Window, width: u32, height: u32) -> crate::Result {
-        let (x, y) = self.window_coordinates(window)?;
-        self.window_set_geometry(window, x, y, width, height)
-    }
-    /// Set the height of this window.
+    /// Set the coordinates of a window.
     #[inline]
     fn window_set_coordinates(&mut self, window: Window, x: i32, y: i32) -> crate::Result {
         let (width, height) = self.window_size(window)?;
-        self.window_set_geometry(window, x, y, width, height)
+        self.window_set_dimensions(window, x, y, width, height)
+    }
+    /// Set the size of a window.
+    #[inline]
+    fn window_set_size(&mut self, window: Window, width: u32, height: u32) -> crate::Result {
+        let (x, y) = self.window_coordinates(window)?;
+        self.window_set_dimensions(window, x, y, width, height)
     }
 
-    /// You shouldn't call this directly, instead use the DisplayExt trait's "window_draw" function.
-    fn window_draw_with_boxed_drawer(
-        &mut self,
-        window: Window,
-        draw: DrawHandler<'_>,
-    ) -> crate::Result;
+    /* Window Drawing Functions */
 
-    // events
-    /// You shouldn't call this directly, instead use the DisplayExtOwned trait's "run" function.
-    fn run_with_boxed_event_handler(&mut self, f: EventHandler) -> crate::Result;
+    /// Draw on a window. It is preferred to use `DisplayExt::draw` instead.
+    fn draw_with_boxed_draw_handler(&mut self, handler: DrawHandler<'_>) -> crate::Result;
+
+    /* Window Misc. Functions */
+
+    /// Get the parent for a certain window.
+    fn window_parent(&mut self, window: Window) -> crate::Result<Option<Window>>;
+
+    /* Misc. Functions */
+
+    /// Begin running the event handler. It is preferred to use `DisplayExtOwned::run` instead. Running this
+    /// function twice has an undefined result, but will most likely error out.
+    fn run_with_boxed_event_handler(&mut self, handler: EventHandler<'evh, Self>) -> crate::Result;
 }
 
-// Display can be implemented on &mut Display as well
-impl<'r, D: Display + ?Sized> Display for &'r mut D {
+// Since all the methods take &mut self, we can implement Display for any &mut Display
+impl<'evh, D: Display<'evh> + ?Sized> Display<'evh> for &mut D {
     #[inline]
     fn screens(&mut self) -> crate::Result<ScreenIter<'_>> {
         (**self).screens()
@@ -131,10 +129,6 @@ impl<'r, D: Display + ?Sized> Display for &'r mut D {
         (**self).toplevel_window(screen)
     }
     #[inline]
-    fn default_toplevel_window(&mut self) -> crate::Result<Window> {
-        (**self).default_toplevel_window()
-    }
-    #[inline]
     fn create_window(
         &mut self,
         x: i32,
@@ -147,107 +141,82 @@ impl<'r, D: Display + ?Sized> Display for &'r mut D {
         (**self).create_window(x, y, width, height, parent, props)
     }
     #[inline]
-    fn destroy_window(&mut self, window: Window) -> crate::Result {
-        (**self).destroy_window(window)
+    fn delete_window(&mut self, window: Window) -> crate::Result {
+        (**self).delete_window(window)
     }
     #[inline]
-    fn window_geometry(&mut self, window: Window) -> crate::Result<(i32, i32, u32, u32)> {
-        (**self).window_geometry(window)
-    }
-    #[inline]
-    fn window_parent(&mut self, window: Window) -> crate::Result<Option<Window>> {
-        (**self).window_parent(window)
-    }
-    #[inline]
-    fn window_size(&mut self, window: Window) -> crate::Result<(u32, u32)> {
-        (**self).window_size(window)
+    fn window_dimensions(&mut self, window: Window) -> crate::Result<Dimensions> {
+        (**self).window_dimensions(window)
     }
     #[inline]
     fn window_coordinates(&mut self, window: Window) -> crate::Result<(i32, i32)> {
         (**self).window_coordinates(window)
     }
     #[inline]
-    fn window_set_visibility(&mut self, window: Window, vis: Visibility) -> crate::Result {
-        (**self).window_set_visibility(window, vis)
+    fn window_size(&mut self, window: Window) -> crate::Result<(u32, u32)> {
+        (**self).window_size(window)
     }
     #[inline]
-    fn window_set_geometry(
-        &mut self,
-        window: Window,
-        x: i32,
-        y: i32,
-        width: u32,
-        height: u32,
-    ) -> crate::Result {
-        (**self).window_set_geometry(window, x, y, width, height)
-    }
-    #[inline]
-    fn window_set_properties(&mut self, window: Window, props: WindowProps) -> crate::Result {
-        (**self).window_set_properties(window, props)
-    }
-    #[inline]
-    fn window_set_size(&mut self, window: Window, width: u32, height: u32) -> crate::Result {
-        (**self).window_set_size(window, width, height)
+    fn window_set_dimensions(&mut self, window: Window, dimensions: Dimensions) -> crate::Result {
+        (**self).window_set_dimensions(window, dimensions)
     }
     #[inline]
     fn window_set_coordinates(&mut self, window: Window, x: i32, y: i32) -> crate::Result {
         (**self).window_set_coordinates(window, x, y)
     }
     #[inline]
-    fn window_draw_with_boxed_drawer(
-        &mut self,
-        window: Window,
-        draw: DrawHandler<'_>,
-    ) -> crate::Result {
-        (**self).window_draw_with_boxed_drawer(window, draw)
+    fn window_set_size(&mut self, window: Window, width: u32, height: u32) -> crate::Result {
+        (**self).window_set_size(window, width, height)
     }
     #[inline]
-    fn run_with_boxed_event_handler(&mut self, f: EventHandler) -> crate::Result {
-        (**self).run_with_boxed_event_handler(f)
+    fn draw_with_boxed_draw_handler(&mut self, handler: DrawHandler<'_>) -> crate::Result {
+        (**self).draw_with_boxed_draw_handler(handler)
+    }
+    #[inline]
+    fn window_parent(&mut self, window: Window) -> crate::Result<Option<Window>> {
+        (**self).window_parent(window)
+    }
+    #[inline]
+    fn run_with_boxed_event_handler(&mut self, handler: EventHandler<'evh, Self>) -> crate::Result {
+        (**self).run_with_boxed_event_handler(handler)
     }
 }
 
-/// Display extension trait, containing generic items that can't be used in dynamic dispatch.
+/// Extension trait for the `Display`.
 pub trait DisplayExt {
-    /// Draw on a window using the given function, which will be provided with a `Surface`. Calling this
-    /// outside of a "paint" event handler may have unpredictable results.
-    fn window_draw<F: FnOnce(&mut SurfaceSum<'_>) -> crate::Result>(
+    /// Draw using the specified draw handler. This is meant to be called inside of a draw event handler; calling
+    /// it outside of one may have undefined consequences.
+    fn draw<F: FnOnce(&mut dyn Surface) -> crate::Result>(
         &mut self,
-        window: Window,
-        f: F,
+        draw_handler: F,
     ) -> crate::Result;
 }
 
-impl<D: Display + ?Sized> DisplayExt for D {
+impl<'evh, D: Display<'evh> + ?Sized> DisplayExt for D {
     #[inline]
-    fn window_draw<F: FnOnce(&mut SurfaceSum<'_>) -> crate::Result>(
+    fn draw<F: FnOnce(&mut dyn Surface) -> crate::Result>(
         &mut self,
-        window: Window,
-        f: F,
+        draw_handler: F,
     ) -> crate::Result {
-        self.window_draw_with_boxed_drawer(window, Box::new(f))
+        self.run_with_boxed_event_handler(Box::new(draw_handler))
     }
 }
 
-/// Display extension trait, containing generic items that can't be put in a sized instantiation.
+/// Extension trait for owned instances of `Display`.
 pub trait DisplayExtOwned {
-    /// Enter this display's main loop with the following event handler function.
-    fn run<F: FnMut(DisplaySumRef<'_>, Event) -> crate::Result + Send + 'static>(
+    /// Run the program using the specified event handler.
+    fn run<F: FnMut(Self, Event) -> crate::Result + Send + 'evh>(
         self,
-        f: F,
+        run_handler: F,
     ) -> crate::Result;
 }
 
-impl<D: Display> DisplayExtOwned for D {
+impl<'evh, D: Display<'evh>> DisplayExtOwned for D {
     #[inline]
-    fn run<F: FnMut(DisplaySumRef<'_>, Event) -> crate::Result + Send + 'static>(
+    fn run<F: FnMut(Self, Event) -> crate::Result + Send + 'evh>(
         mut self,
-        f: F,
+        run_handler: F,
     ) -> crate::Result {
-        self.run_with_boxed_event_handler(Box::new(f))
+        self.run_with_boxed_event_handler(Box::new(run_handler))
     }
 }
-
-/// An async version of the Display trait.
-#[cfg(feature = "async")]
-pub trait AsyncDisplay {}

@@ -1,36 +1,36 @@
 // MIT/Apache2 License
 
-use chalkboard::Color;
-use std::num::NonZeroU64;
+use crate::{Color, FillRule};
+use std::num::NonZeroUsize;
 
-/// A window.
+/// A logical window. This, in the barest terms, represents "a rectangle on the screen where the application has
+/// control".
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[repr(transparent)]
-pub struct Window(NonZeroU64);
+pub struct Window {
+    /// The inner value. Windows are either a pointer or a non-zero ID. We can therefore take advantage of zero
+    /// value optimization using a `NonZeroUsize`.
+    inner: NonZeroUsize,
+}
 
 impl Window {
+    /// Get a `Window` from the raw value.
     #[inline]
-    pub fn from_raw(raw: NonZeroU64) -> Self {
-        Self(raw)
+    pub fn from_raw(inner: NonZeroUsize) -> Window {
+        Window { inner }
     }
 
+    /// Get the raw `NonZeroUsize` from this `Window`.
     #[inline]
-    pub fn into_raw(self) -> NonZeroU64 {
-        self.0
+    pub fn into_raw(self) -> NonZeroUsize {
+        self.inner
     }
 }
 
-/// Associated properties of a window.
-#[derive(Debug, Clone, PartialEq, Default, Eq, PartialOrd, Ord, Hash)]
+/// The properties that a window may have.
+#[derive(Debug, Default)]
 pub struct WindowProps {
     pub title: Option<String>,
-    pub background_color: Option<Color>,
+    pub background: Option<FillRule>,
     pub border_color: Option<Color>,
-    pub border_width: u32,
-}
-
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum Visibility {
-    Visible,
-    Hidden,
+    pub border_width: Option<usize>,
 }

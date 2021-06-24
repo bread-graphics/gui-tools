@@ -1,5 +1,8 @@
 // MIT/Apache2 License
 
-use crate::display::Display;
-
-pub enum Event {}
+/// Sum type representing a possible event emitted by the underlying GUI library.
+#[derive(Debug)]
+pub enum Event {
+    /// The display is being closed; good time to deallocate resources.
+    Closing,
+}

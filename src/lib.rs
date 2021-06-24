@@ -1,22 +1,23 @@
 // MIT/Apache2 License
 
-#![feature(min_specialization)]
+//! This crate simply acts as an abstraction over a variety of graphical user interface (GUI) libraries for a
+//! variety of platforms. `gui-tools` aims to be thread-safe, low-contention and versatile, but most of all tries
+//! to put as few layers between the user and the actual API as possible.
 
-#[cfg(feature = "breadx")]
+#![forbid(unsafe_code)]
+
+#[cfg(unix)]
 pub mod breadx;
+
 pub mod display;
-pub mod event;
 pub mod screen;
-pub mod surface;
 pub mod window;
-#[cfg(windows)]
-pub mod yaww;
 
-mod error;
-pub use error::*;
+pub(crate) mod init;
 
-pub(crate) mod util;
+pub use display::*;
+pub use screen::*;
+pub use window::*;
 
-pub mod prelude {
-    pub use crate::display::{Display, DisplayExt, DisplayExtOwned};
-}
+#[doc(inline)]
+pub use chalkboard::{Error, Result};

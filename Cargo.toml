@@ -1,26 +1,16 @@
 [package]
 name = "gui-tools"
-version = "0.0.2"
-authors = ["notgull <jtnunley01@gmail.com>"]
+version = "0.1.0"
 edition = "2018"
-repository = "https://github.com/notgull/gui-tools"
-homepage = "https://github.com/notgull/gui-tools#readme"
-keywords = ["gui"]
-license = "MIT OR Apache-2.0"
 
 [dependencies]
+chalkboard = { path = "../chalkboard", features = ["breadx", "yaww"] }
+
+[target.'cfg(unix)'.dependencies]
 breadx = { path = "../breadx", optional = true }
-cfg-if = "1"
-chalkboard = { path = "../chalkboard", default-features = false }
 
 [target.'cfg(windows)'.dependencies]
-flume = { version = "0.10", default-features = false }
-yaww = { path = "../yaww" }
+yaww = { path = "../yaww", optional = true }
 
 [features]
-default = ["breadx", "xrender"]
-async = ["breadx/async", "chalkboard/async"]
-xrender = ["breadx/render", "chalkboard/xrender"]
 
-[badges]
-azure-devops = { project = "jtnunley01/gui-tools", pipeline = "not-a-seagull.gui-tools" }

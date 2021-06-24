@@ -1,89 +1,121 @@
 // MIT/Apache2 License
 
-use crate::util::DebugContainer;
 use std::{ops::Range, vec::IntoIter as VecIter};
 
-/// A logical screen, often representing a monitor or collection of monitors.
+/// A logical screen, consisting of an area of screen space.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[repr(transparent)]
 pub struct Screen {
-    // this is often either an index into an array or a pointer. in any case, a usize
-    // fits both of these use cases
-    inner: usize,
+    /// The screen is usually either an index into an array or a pointer. In either case, a `usize`
+    /// fits.
+    screen: usize,
 }
 
 impl Screen {
+    /// Get a screen from a raw `usize`.
     #[inline]
-    pub fn from_raw(inner: usize) -> Self {
-        Self { inner }
+    pub fn from_raw(screen: usize) -> Screen {
+        Screen { screen }
     }
 
+    /// Get the raw `usize` out of this structure.
     #[inline]
     pub fn into_raw(self) -> usize {
-        self.inner
+        self.screen
     }
 }
 
-/// An iterator over the screens provided by a display.
-#[derive(Debug)]
-pub struct ScreenIter<'a> {
-    inner: Repr<'a>,
+/// An iterator over a set of screens.
+pub struct ScreenIter<'iter> {
+    inner: Impl<'iter>,
 }
 
-#[derive(Debug)]
-enum Repr<'a> {
+enum Impl<'iter> {
+    /// Just a range from two numbers.
     Range(Range<usize>),
+    /// An iterator over a vector.
     Vector(VecIter<usize>),
-    Other(DebugContainer<Box<dyn Iterator<Item = usize> + Send + 'a>>),
+    /// A generic iterator.
+    Generic(Box<dyn Iterator<Item = usize> + 'iter>),
 }
 
-impl<'a> ScreenIter<'a> {
+impl<'iter> ScreenIter<'iter> {
+    /// Create a `ScreenIter` over a range from `start` to `end`, `end` exclusive.
     #[inline]
-    pub fn from_range(begin_at: usize, end_before: usize) -> Self {
-        Self {
-            inner: Repr::Range(begin_at..end_before),
+    pub fn range(start: usize, end: usize) -> ScreenIter<'iter> {
+        ScreenIter {
+            inner: Impl::Range(start..end),
         }
     }
 
+    /// Create a `ScreenIter` using another iterator.
     #[inline]
-    pub fn from_vector(v: Vec<usize>) -> Self {
-        Self {
-            inner: Repr::Vector(v.into_iter()),
-        }
-    }
-
-    #[inline]
-    pub fn from_iterator<I: IntoIterator<Item = usize>>(i: I) -> Self
+    pub fn from_iterator<I: IntoIterator<Item = usize>>(iter: I) -> ScreenIter<'iter>
     where
-        I::IntoIter: ExactSizeIterator + Send + 'a,
+        I::IntoIter: ExactSizeIterator + 'iter,
     {
-        Self {
-            inner: Repr::Other(DebugContainer::new(Box::new(i.into_iter()))),
+        ScreenIter {
+            inner: Impl::Generic(Box::new(iter.into_iter())),
         }
     }
 }
 
-impl<'a> Iterator for ScreenIter<'a> {
+impl<'iter> From<Vec<usize>> for ScreenIter<'iter> {
+    /// Create a `ScreenIter` based on a vector full of `usize`s.
+    #[inline]
+    fn from(vector: Vec<usize>) -> ScreenIter<'iter> {
+        ScreenIter {
+            inner: Impl::Vector(vector.into_iter()),
+        }
+    }
+}
+
+impl<'iter> Iterator for ScreenIter<'iter> {
     type Item = Screen;
 
     #[inline]
     fn next(&mut self) -> Option<Screen> {
         match &mut self.inner {
-            Repr::Range(r) => r.next().map(Screen::from_raw),
-            Repr::Vector(v) => v.next().map(Screen::from_raw),
-            Repr::Other(i) => i.next().map(Screen::from_raw),
+            Impl::Range(r) => r.next().map(Screen::from_raw),
+            Impl::Vector(v) => v.next().map(Screen::from_raw),
+            Impl::Generic(g) => g.next().map(Screen::from_raw),
         }
     }
 
     #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
         match &self.inner {
-            Repr::Range(r) => r.size_hint(),
-            Repr::Vector(v) => v.size_hint(),
-            Repr::Other(i) => i.size_hint(),
+            Impl::Range(r) => r.size_hint(),
+            Impl::Vector(v) => v.size_hint(),
+            Impl::Generic(g) => g.size_hint(),
+        }
+    }
+
+    // Most iterator operations are implemented in terms of "next", "nth", "fold", or "try_fold". In order to
+    // offset the cost of doing a branch prediction every time "next()" is called, we implement these operations
+    // in order to forward their implementations to the inner type instead of running "next()" several times
+    // note that we can't do "try_fold" because it uses nightly features (try_trait), so we just have to eat
+    // the cost of that
+
+    #[inline]
+    fn nth(&mut self, index: usize) -> Option<Screen> {
+        match &mut self.inner {
+            Impl::Range(r) => r.nth(index).map(Screen::from_raw),
+            Impl::Vector(v) => v.nth(index).map(Screen::from_raw),
+            Impl::Generic(g) => g.nth(index).map(Screen::from_raw),
+        }
+    }
+
+    #[inline]
+    fn fold<B, F: FnMut(B, Screen) -> B>(self, init: B, mut closure: F) -> B {
+        let mut closure = move |accum, item| closure(accum, Screen::from_raw(item));
+
+        match self.inner {
+            Impl::Range(r) => r.fold(init, closure),
+            Impl::Vector(v) => v.fold(init, closure),
+            Impl::Generic(g) => g.fold(init, closure),
         }
     }
 }
 
-// as per "from_iterator"'s type bounds, ScreenIter::Other implicitly derives ExactSizeIterator
-impl<'a> ExactSizeIterator for ScreenIter<'a> {}
+// from_iterator() is parameterized by ExactSizeIterator, so this is sound
+impl<'iter> ExactSizeIterator for ScreenIter<'iter> {}
