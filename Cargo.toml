@@ -4,7 +4,9 @@ version = "0.1.0"
 edition = "2018"
 
 [dependencies]
+cfg-if = "1"
 chalkboard = { path = "../chalkboard", features = ["breadx", "yaww"] }
+log = "0.4"
 
 [target.'cfg(unix)'.dependencies]
 breadx = { path = "../breadx", optional = true }
@@ -13,4 +15,5 @@ breadx = { path = "../breadx", optional = true }
 yaww = { path = "../yaww", optional = true }
 
 [features]
-
+default = ["xrender"]
+xrender = ["breadx/render", "chalkboard/xrender"]

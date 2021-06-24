@@ -2,7 +2,10 @@
 
 use super::BreadxDisplay;
 use crate::event::Event;
-use breadx::{display::{prelude::*, Display}, event::Event as BEvent};
+use breadx::{
+    display::{prelude::*, Display},
+    event::Event as BEvent,
+};
 
 impl<Dpy: Display> BreadxDisplay<Dpy> {
     #[inline]

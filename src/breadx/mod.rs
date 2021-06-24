@@ -4,20 +4,29 @@
 
 mod event;
 
-use breadx::{
-    auth_info::AuthInfo,
-    display::{prelude::*, Display, DisplayBase, DisplayConnection},
-    ColorAllocation, Colormap, ConfigureWindowParameters, Gcontext, Window as BreadxWindow,
+use crate::{
+    display::Display,
+    screen::{Screen, ScreenIter},
+    window::{Window, WindowProps},
+    Dimensions, DrawHandler, EventHandler, FillRule,
 };
-use chalkboard::Color;
+use breadx::{
+    auto::xproto::InternAtomRequest,
+    display::{prelude::*, Display as XDisplay, DisplayBase, DisplayConnection, RequestCookie},
+    Atom, AuthInfo, ColorAllocation, Colormap, ColormapAlloc, ConfigureWindowParameters, Gcontext,
+    Visualid, Window as BreadxWindow, WindowClass,
+};
+use chalkboard::{breadx::FallbackBreadxSurface, Color};
 use std::{
-    borrow::Cow,
-    collections::hash_map::{Entry, HashMap},
+    borrow::{Borrow, Cow},
+    collections::HashMap,
+    convert::TryInto,
     mem,
+    num::NonZeroUsize,
 };
 
 #[cfg(feature = "xrender")]
-use breadx::render::{Picture, RenderDisplay};
+use breadx::render::{Picture, PictureParameters, RenderDisplay};
 #[cfg(feature = "xrender")]
 use chalkboard::breadx::{RenderBreadxSurface, RenderResidual};
 
@@ -28,6 +37,7 @@ pub struct BreadxDisplay<Dpy> {
     //       is faster to just keep them in the client
     colormaps: HashMap<Visualid, Colormap>,
     window_visuals: HashMap<Window, Visualid>,
+    atoms: HashMap<&'static str, Atom>,
 }
 
 #[derive(Debug)]
@@ -57,17 +67,18 @@ impl<Dpy: DisplayBase> BreadxDisplay<Dpy> {
             "Xid cannot fit into a NonZeroUsize"
         );
         Self {
-            window_screens: dpy
+            window_visuals: dpy
                 .setup()
                 .roots
                 .iter()
-                .map(|(i, root)| (root.root, root.root_visual))
+                .map(|root| (cvt_window_r(root.root), root.root_visual))
                 .collect(),
             manager: Manager::Basic {
                 dpy,
                 colors: HashMap::new(),
             },
             colormaps: HashMap::new(),
+            atoms: HashMap::new(),
         }
     }
 
@@ -96,30 +107,83 @@ impl BreadxDisplayConnection {
     }
 }
 
-impl<Dpy: Display> BreadxDisplay<Dpy> {
+impl<Dpy: XDisplay> BreadxDisplay<Dpy> {
     #[inline]
     pub(crate) fn colormap_for_visual(
         &mut self,
         visual: Visualid,
         subject_window: BreadxWindow,
     ) -> crate::Result<Colormap> {
-        match self.colormaps.entry(visual) {
-            Entry::Occupied(cmap) => Ok(*cmap.get()),
-            Entry::Vacant(v) => {
+        match self.colormaps.get(&visual) {
+            Some(cmap) => Ok(*cmap),
+            None => {
                 // allocate a new colormap
                 let cmap = self.display_mut().create_colormap(
                     subject_window,
                     visual,
                     ColormapAlloc::All,
                 )?;
-                Ok(*v.insert(cmap))
+                self.colormaps.insert(visual, cmap);
+                Ok(cmap)
             }
         }
+    }
+
+    #[inline]
+    pub(crate) fn set_atoms_for_window<
+        Value: Borrow<str>,
+        I: IntoIterator<Item = (&'static str, Value)>,
+    >(
+        &mut self,
+        window: BreadxWindow,
+        atoms: I,
+    ) -> crate::Result {
+        enum AtomOrToken {
+            Atom(Atom),
+            Token(RequestCookie<InternAtomRequest<'static>>, &'static str),
+        }
+
+        // figure out which atoms we have and which we need to poll for
+        let atoms = atoms.into_iter();
+        let mut atoms_and_values = Vec::with_capacity(atoms.size_hint().0);
+
+        for (atom, value) in atoms {
+            atoms_and_values.push((
+                match self.atoms.get(&atom) {
+                    Some(atom_xid) => AtomOrToken::Atom(*atom_xid),
+                    None => AtomOrToken::Token(self.display_mut().intern_atom(atom, true)?, atom),
+                },
+                value,
+            ));
+        }
+
+        // go through and begin setting string atoms
+        for (atom_or_token, value) in atoms_and_values {
+            let real_atom = match atom_or_token {
+                AtomOrToken::Atom(a) => a,
+                AtomOrToken::Token(t, key) => {
+                    let real_atom = self.display_mut().resolve_request(t)?.atom;
+                    self.atoms.insert(key, real_atom);
+                    real_atom
+                }
+            };
+
+            window.change_property(
+                self.display_mut(),
+                real_atom,
+                PropertyType::String,
+                PropertyFormat::Eight,
+                PropMode::Replace,
+                value.borrow().as_bytes(),
+            )?;
+        }
+
+        Ok(())
     }
 }
 
 #[cfg(feature = "xrender")]
-impl<Dpy: Display> BreadxDisplay<Dpy> {
+impl<Dpy: XDisplay> BreadxDisplay<Dpy> {
     /// Convert this into an equivalent "xrender" display.
     #[inline]
     pub fn enable_xrender(&mut self) -> crate::Result {
@@ -130,7 +194,10 @@ impl<Dpy: Display> BreadxDisplay<Dpy> {
                 Ok(())
             }
             manager @ Manager::Basic { .. } => {
-                let Manager::Basic { dpy, .. } = mem::replace(manager, Manager::Placeholder);
+                let dpy = match mem::replace(manager, Manager::Placeholder) {
+                    Manager::Basic { dpy, .. } => dpy,
+                    _ => unreachable!(),
+                };
 
                 // try to create a RenderDisplay
                 let dpy = match RenderDisplay::new(dpy, 1, 1) {
@@ -167,8 +234,8 @@ impl<'evh, Dpy: breadx::Display> Display<'evh> for BreadxDisplay<Dpy> {
 
     #[inline]
     fn screen_dimensions(&mut self, screen: Screen) -> crate::Result<(u32, u32)> {
-        let root = &self
-            .display_mut()
+        let dpy = self.display_mut();
+        let root = &dpy
             .setup()
             .roots
             .get(screen.into_raw())
@@ -204,7 +271,7 @@ impl<'evh, Dpy: breadx::Display> Display<'evh> for BreadxDisplay<Dpy> {
             .window_visuals
             .get(&parent)
             .copied()
-            .unwrap_or(crate::Error::NotOurWindow(parent.into_raw()))?;
+            .ok_or(crate::Error::NotOurWindow(parent.into_raw()))?;
         let cmap = self.colormap_for_visual(visual, cvt_window(parent))?;
 
         let border_width: u16 = props
@@ -215,7 +282,7 @@ impl<'evh, Dpy: breadx::Display> Display<'evh> for BreadxDisplay<Dpy> {
             .expect("Border width is greater than the max size u16, this is likely a mistake");
 
         // figure out which parameters to give our window
-        let ParameterizeAndAtomSetting {
+        let ParameterizerAndAtomSetting {
             parameterizer,
             strings_to_set,
         } = window_props_to_adjustor(self.display_mut(), cmap, props)?;
@@ -233,9 +300,12 @@ impl<'evh, Dpy: breadx::Display> Display<'evh> for BreadxDisplay<Dpy> {
             border_width,
             parameterizer,
         )?;
-        let window = cvt_window_r(window);
+
+        // set atoms
+        self.set_atoms_for_window(window, strings_to_set)?;
 
         // install the window into our window_screens map
+        let window = cvt_window_r(window);
         self.window_visuals.insert(window, visual);
 
         Ok(window)
@@ -244,7 +314,7 @@ impl<'evh, Dpy: breadx::Display> Display<'evh> for BreadxDisplay<Dpy> {
     #[inline]
     fn delete_window(&mut self, window: Window) -> crate::Result {
         if self.window_visuals.remove(&window).is_none() {
-            return Err(crate::Error::NotOurWindow(window.into_raw())?);
+            return Err(crate::Error::NotOurWindow(window.into_raw()));
         }
 
         let window = cvt_window(window);
@@ -263,10 +333,10 @@ impl<'evh, Dpy: breadx::Display> Display<'evh> for BreadxDisplay<Dpy> {
             ..
         } = window.geometry_immediate(self.display_mut())?;
         Ok(Dimensions {
-            x,
-            y,
-            width,
-            height,
+            x: x.into(),
+            y: y.into(),
+            width: width.into(),
+            height: height.into(),
         })
     }
 
@@ -323,9 +393,9 @@ impl<'evh, Dpy: breadx::Display> Display<'evh> for BreadxDisplay<Dpy> {
         window: Window,
         handler: DrawHandler<'_>,
     ) -> crate::Result {
-        let window = cvt_window(window);
         #[cfg(feature = "xrender")]
         let visual = self.window_visuals.get(&window).copied().unwrap();
+        let window = cvt_window(window);
 
         // call the handler with a draw handle that we construct
         match &mut self.manager {
@@ -350,7 +420,7 @@ impl<'evh, Dpy: breadx::Display> Display<'evh> for BreadxDisplay<Dpy> {
                 let res = handler(&mut surface);
 
                 // insert gc and color back into surface
-                colors.insert((gc, surface.into_colormap()));
+                colors.insert(window, (gc, surface.into_colormap()));
 
                 res
             }
@@ -362,7 +432,7 @@ impl<'evh, Dpy: breadx::Display> Display<'evh> for BreadxDisplay<Dpy> {
                         picture,
                         RenderBreadxSurface::from_residual(
                             dpy, picture, window, width, height, residual,
-                        ),
+                        )?,
                     ),
                     None => {
                         // create a picture
@@ -386,7 +456,7 @@ impl<'evh, Dpy: breadx::Display> Display<'evh> for BreadxDisplay<Dpy> {
 
                 let res = handler(&mut surface);
 
-                residual.insert((picture, surface.into_residual()));
+                residual.insert(window, (picture, surface.into_residual()));
 
                 res
             }
@@ -395,12 +465,12 @@ impl<'evh, Dpy: breadx::Display> Display<'evh> for BreadxDisplay<Dpy> {
 
     #[inline]
     fn window_parent(&mut self, window: Window) -> crate::Result<Option<Window>> {
-        let Geometry { parent, .. } = cvt_window(window).geometry_immediate(self.display_mut())?;
-        Ok(NonZeroUsize::new(parent.xid as usize).map(Window::from_raw))
+        let Geometry { root, .. } = cvt_window(window).geometry_immediate(self.display_mut())?;
+        Ok(NonZeroUsize::new(root.xid as usize).map(Window::from_raw))
     }
 
     #[inline]
-    fn run_with_boxed_event_handler(&mut self, handler: EventHandler<'evh, Self>) -> crate::Result {
+    fn run_with_boxed_event_handler(&mut self, mut handler: EventHandler<'evh>) -> crate::Result {
         loop {
             // note: return on error, since the display is probably not sane if we error out
             let ev = match self.display_mut().wait_for_event() {
@@ -410,7 +480,11 @@ impl<'evh, Dpy: breadx::Display> Display<'evh> for BreadxDisplay<Dpy> {
             };
 
             if let Some(ev) = self.convert_event(ev)? {
+                let quit = ev.is_quit_event();
                 handler(self, ev)?;
+                if quit {
+                    break;
+                }
             }
         }
 
@@ -457,27 +531,28 @@ fn cvt_window_r(win: BreadxWindow) -> Window {
 }
 
 #[inline]
-fn window_props_to_adjustor<Dpy: Display>(
+fn window_props_to_adjustor<Dpy: XDisplay>(
     dpy: &mut Dpy,
     cmap: Colormap,
     window_props: WindowProps,
 ) -> crate::Result<ParameterizerAndAtomSetting> {
-    let mut paas = Default::default();
+    let mut paas: ParameterizerAndAtomSetting = Default::default();
     let WindowProps {
         title,
         background,
         border_color,
+        ..
     } = window_props;
 
     if let Some(title) = title {
-        paas.strings_to_set.push(("WM_TITLE", title));
+        paas.strings_to_set.push(("WM_NAME", title));
     }
 
     let background_pixel_alloc_token = match background {
         None => None,
         Some(FillRule::SolidColor(clr)) => {
-            let (r, g, b) = clr.clamp_u16();
-            Some(cmap.alloc_color(dpy, r, g, b)?.pixel());
+            let (r, g, b, _) = clr.clamp_u16();
+            Some(cmap.alloc_color(dpy, r, g, b)?)
         }
         _ => {
             return Err(crate::Error::StaticMsg(
@@ -488,19 +563,19 @@ fn window_props_to_adjustor<Dpy: Display>(
 
     let border_pixel_alloc_token = match border_color {
         Some(clr) => {
-            let (r, g, b) = clr.clamp_u16();
-            Some(cmap.alloc_color(dpy, r, g, b)?.pixel())
+            let (r, g, b, _) = clr.clamp_u16();
+            Some(cmap.alloc_color(dpy, r, g, b)?)
         }
         None => None,
     };
 
     // resolve for any tokens we sent
     if let Some(bpat) = background_pixel_alloc_token {
-        paas.parameterize.background_pixel = Some(dpy.resolve_request(bpat)?.pixel);
+        paas.parameterizer.background_pixel = Some(dpy.resolve_request(bpat)?.pixel);
     }
 
     if let Some(bpat) = border_pixel_alloc_token {
-        paas.parameterize.border_pixel = Some(dpy.resolve_request(bpat)?.pixel);
+        paas.parameterizer.border_pixel = Some(dpy.resolve_request(bpat)?.pixel);
     }
 
     Ok(paas)

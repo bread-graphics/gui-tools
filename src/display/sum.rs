@@ -1,6 +1,6 @@
 // MIT/Apache2 License
 
-use super::Display;
+use super::{Display, DrawHandler, EventHandler};
 use crate::{Dimensions, Screen, ScreenIter, Window, WindowProps};
 
 #[cfg(unix)]
@@ -42,13 +42,14 @@ macro_rules! impl_display_sum {
                 DisplaySum::Generic(g) => g.$fname($($aname),*),
             }
         }
-    }
+    };
     (fn $fname: ident ( &mut self, $($aname: ident: $aty: ty),* ) -> $retty: ty, $($tt:tt)*) => {
-        impl_display_sum!(fn $fname(&mut self, $($aname: $aty),*) -> $retty)
-        impl_display_sum!($($tt)*)
-    }
+        impl_display_sum! { fn $fname(&mut self, $($aname: $aty),*) -> $retty }
+        impl_display_sum! { $($tt)* }
+    };
 }
 
+/*
 macro_rules! impl_display_sum {
     ($(fn $fname: ident ( &mut self, $($aname: ident: $aty: ty),* ) -> $retty: ty),*) => {
         impl<'evh> Display<'evh> for DisplaySum<'evh> {
@@ -58,6 +59,7 @@ macro_rules! impl_display_sum {
         }
     }
 }
+*/
 
 impl<'evh> Display<'evh> for DisplaySum<'evh> {
     impl_display_sum! {
@@ -88,7 +90,7 @@ impl<'evh> Display<'evh> for DisplaySum<'evh> {
         ) -> crate::Result,
         fn window_set_coordinates(&mut self, window: Window, x: i32, y: i32) -> crate::Result,
         fn window_set_size(&mut self, window: Window, width: u32, height: u32) -> crate::Result,
-        fn draw_with_boxed_draw_handler(&mut self, handler: DrawHandler<'_>) -> crate::Result,
+        fn draw_with_boxed_draw_handler(&mut self, window: Window, handler: DrawHandler<'_>) -> crate::Result,
         fn window_parent(&mut self, window: Window) -> crate::Result<Option<Window>>,
         fn run_with_boxed_event_handler(&mut self, handler: EventHandler<'evh>) -> crate::Result
     }

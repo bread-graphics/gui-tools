@@ -10,14 +10,18 @@
 pub mod breadx;
 
 pub mod display;
+pub mod event;
+pub mod geometry;
 pub mod screen;
 pub mod window;
 
 pub(crate) mod init;
 
 pub use display::*;
+pub use event::*;
+pub use geometry::*;
 pub use screen::*;
 pub use window::*;
 
 #[doc(inline)]
-pub use chalkboard::{Error, Result};
+pub use chalkboard::{Color, Error, FillRule, Result};

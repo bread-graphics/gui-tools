@@ -107,7 +107,7 @@ impl<'iter> Iterator for ScreenIter<'iter> {
 
     #[inline]
     fn fold<B, F: FnMut(B, Screen) -> B>(self, init: B, mut closure: F) -> B {
-        let mut closure = move |accum, item| closure(accum, Screen::from_raw(item));
+        let closure = move |accum, item| closure(accum, Screen::from_raw(item));
 
         match self.inner {
             Impl::Range(r) => r.fold(init, closure),

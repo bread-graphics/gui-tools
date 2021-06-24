@@ -3,14 +3,14 @@
 //! This module defines the "display", which represents either the connection to the server or the thread in
 //! which the server is running. Most operations in the `gui-tools` crate take place using the `Display` trait.
 
-use super::Screen;
+use super::{Dimensions, Event, Screen, ScreenIter, Window, WindowProps};
 use chalkboard::surface::Surface;
 
 mod sum;
 pub use sum::*;
 
 /// A boxed event handler.
-/// 
+///
 /// TODO: somehow avoid dynamic dispatch here, since the given reference is !Send
 pub type EventHandler<'evh> =
     Box<dyn FnMut(&mut dyn Display<'evh>, Event) -> crate::Result + Send + 'evh>;
@@ -68,7 +68,7 @@ pub trait Display<'evh> {
     #[inline]
     fn window_size(&mut self, window: Window) -> crate::Result<(u32, u32)> {
         let Dimensions { width, height, .. } = self.window_dimensions(window)?;
-        Ok((x, y))
+        Ok((width, height))
     }
 
     /// Set the dimensions of a window.
@@ -96,7 +96,11 @@ pub trait Display<'evh> {
     /* Window Drawing Functions */
 
     /// Draw on a window. It is preferred to use `DisplayExt::draw` instead.
-    fn draw_with_boxed_draw_handler(&mut self, handler: DrawHandler<'_>) -> crate::Result;
+    fn draw_with_boxed_draw_handler(
+        &mut self,
+        window: Window,
+        handler: DrawHandler<'_>,
+    ) -> crate::Result;
 
     /* Window Misc. Functions */
 
@@ -107,7 +111,7 @@ pub trait Display<'evh> {
 
     /// Begin running the event handler. It is preferred to use `DisplayExtOwned::run` instead. Running this
     /// function twice has an undefined result, but will most likely error out.
-    fn run_with_boxed_event_handler(&mut self, handler: EventHandler<'evh, Self>) -> crate::Result;
+    fn run_with_boxed_event_handler(&mut self, handler: EventHandler<'evh>) -> crate::Result;
 }
 
 // Since all the methods take &mut self, we can implement Display for any &mut Display
@@ -157,8 +161,15 @@ impl<'evh, D: Display<'evh> + ?Sized> Display<'evh> for &mut D {
         (**self).window_size(window)
     }
     #[inline]
-    fn window_set_dimensions(&mut self, window: Window, dimensions: Dimensions) -> crate::Result {
-        (**self).window_set_dimensions(window, dimensions)
+    fn window_set_dimensions(
+        &mut self,
+        window: Window,
+        x: i32,
+        y: i32,
+        width: u32,
+        height: u32,
+    ) -> crate::Result {
+        (**self).window_set_dimensions(window, x, y, width, height)
     }
     #[inline]
     fn window_set_coordinates(&mut self, window: Window, x: i32, y: i32) -> crate::Result {
@@ -169,15 +180,19 @@ impl<'evh, D: Display<'evh> + ?Sized> Display<'evh> for &mut D {
         (**self).window_set_size(window, width, height)
     }
     #[inline]
-    fn draw_with_boxed_draw_handler(&mut self, handler: DrawHandler<'_>) -> crate::Result {
-        (**self).draw_with_boxed_draw_handler(handler)
+    fn draw_with_boxed_draw_handler(
+        &mut self,
+        window: Window,
+        handler: DrawHandler<'_>,
+    ) -> crate::Result {
+        (**self).draw_with_boxed_draw_handler(window, handler)
     }
     #[inline]
     fn window_parent(&mut self, window: Window) -> crate::Result<Option<Window>> {
         (**self).window_parent(window)
     }
     #[inline]
-    fn run_with_boxed_event_handler(&mut self, handler: EventHandler<'evh, Self>) -> crate::Result {
+    fn run_with_boxed_event_handler(&mut self, handler: EventHandler<'evh>) -> crate::Result {
         (**self).run_with_boxed_event_handler(handler)
     }
 }
@@ -188,6 +203,7 @@ pub trait DisplayExt {
     /// it outside of one may have undefined consequences.
     fn draw<F: FnOnce(&mut dyn Surface) -> crate::Result>(
         &mut self,
+        window: Window,
         draw_handler: F,
     ) -> crate::Result;
 }
@@ -196,24 +212,25 @@ impl<'evh, D: Display<'evh> + ?Sized> DisplayExt for D {
     #[inline]
     fn draw<F: FnOnce(&mut dyn Surface) -> crate::Result>(
         &mut self,
+        window: Window,
         draw_handler: F,
     ) -> crate::Result {
-        self.run_with_boxed_event_handler(Box::new(draw_handler))
+        self.draw_with_boxed_draw_handler(window, Box::new(draw_handler))
     }
 }
 
 /// Extension trait for owned instances of `Display`.
-pub trait DisplayExtOwned {
+pub trait DisplayExtOwned<'evh>: Sized {
     /// Run the program using the specified event handler.
-    fn run<F: FnMut(Self, Event) -> crate::Result + Send + 'evh>(
+    fn run<F: FnMut(&mut dyn Display<'evh>, Event) -> crate::Result + Send + 'evh>(
         self,
         run_handler: F,
     ) -> crate::Result;
 }
 
-impl<'evh, D: Display<'evh>> DisplayExtOwned for D {
+impl<'evh, D: Display<'evh>> DisplayExtOwned<'evh> for D {
     #[inline]
-    fn run<F: FnMut(Self, Event) -> crate::Result + Send + 'evh>(
+    fn run<F: FnMut(&mut dyn Display<'evh>, Event) -> crate::Result + Send + 'evh>(
         mut self,
         run_handler: F,
     ) -> crate::Result {
