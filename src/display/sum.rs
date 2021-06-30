@@ -77,6 +77,7 @@ impl<'evh> Display<'evh> for DisplaySum<'evh> {
             props: WindowProps
         ) -> crate::Result<Window>,
         fn delete_window(&mut self, window: Window) -> crate::Result,
+        fn set_window_visibility(&mut self, window: Window, visible: bool) -> crate::Result,
         fn window_dimensions(&mut self, window: Window) -> crate::Result<Dimensions>,
         fn window_coordinates(&mut self, window: Window) -> crate::Result<(i32, i32)>,
         fn window_size(&mut self, window: Window) -> crate::Result<(u32, u32)>,

@@ -5,6 +5,9 @@ use crate::display::DisplaySum;
 #[cfg(unix)]
 use crate::breadx::BreadxDisplayConnection;
 
+#[cfg(windows)]
+use crate::yaww::YawwDisplay;
+
 /// Creates a new `DisplaySum` using the system's resources.
 #[inline]
 pub(crate) fn init<'evh>() -> crate::Result<DisplaySum<'evh>> {

@@ -54,6 +54,11 @@ pub trait Display<'evh> {
     /// Delete a window.
     fn delete_window(&mut self, window: Window) -> crate::Result;
 
+    /* Window Visibility */
+
+    /// Set a window's visibility to on and off.
+    fn set_window_visibility(&mut self, window: Window, visible: bool) -> crate::Result;
+
     /* Window Geometry Functions */
 
     /// Get the dimensions of a window.
@@ -147,6 +152,10 @@ impl<'evh, D: Display<'evh> + ?Sized> Display<'evh> for &mut D {
     #[inline]
     fn delete_window(&mut self, window: Window) -> crate::Result {
         (**self).delete_window(window)
+    }
+    #[inline]
+    fn set_window_visibility(&mut self, window: Window, visible: bool) -> crate::Result {
+        (**self).set_window_visibility(window, visible)
     }
     #[inline]
     fn window_dimensions(&mut self, window: Window) -> crate::Result<Dimensions> {

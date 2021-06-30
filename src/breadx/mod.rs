@@ -323,6 +323,19 @@ impl<'evh, Dpy: breadx::Display> Display<'evh> for BreadxDisplay<Dpy> {
     }
 
     #[inline]
+    fn set_window_visibility(&mut self, window: Window, visible: bool) -> crate::Result {
+        let window = cvt_window(window);
+
+        if visible {
+            window.map(self.display_mut())?;
+        } else {
+            window.unmap(self.display_mut())?;
+        }
+
+        Ok(())
+    }
+
+    #[inline]
     fn window_dimensions(&mut self, window: Window) -> crate::Result<Dimensions> {
         let window = cvt_window(window);
         let Geometry {

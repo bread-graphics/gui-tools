@@ -9,6 +9,9 @@
 #[cfg(unix)]
 pub mod breadx;
 
+#[cfg(windows)]
+pub mod yaww;
+
 pub mod display;
 pub mod event;
 pub mod geometry;
@@ -16,6 +19,7 @@ pub mod screen;
 pub mod window;
 
 pub(crate) mod init;
+pub(crate) mod mutex;
 
 pub use display::*;
 pub use event::*;

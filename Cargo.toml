@@ -7,13 +7,21 @@ edition = "2018"
 cfg-if = "1"
 chalkboard = { path = "../chalkboard", features = ["breadx", "yaww"] }
 log = "0.4"
+parking_lot = { version = "0.11.1", optional = true }
 
 [target.'cfg(unix)'.dependencies]
-breadx = { path = "../breadx", optional = true }
+breadx = { path = "../breadx" }
 
 [target.'cfg(windows)'.dependencies]
-yaww = { path = "../yaww", optional = true }
+nanorand = "0.5"
+yaww = { path = "../yaww" }
+
+[target.'cfg(any(windows, target_os = "macos"))'.dependencies]
+dashmap = "4"
+once_cell = "1.8"
+thread-safe = "0.1"
 
 [features]
 default = ["xrender"]
+pl = ["parking_lot", "chalkboard/parking_lot", "once_cell/parking_lot", "yaww/parking_lot"]
 xrender = ["breadx/render", "chalkboard/xrender"]
