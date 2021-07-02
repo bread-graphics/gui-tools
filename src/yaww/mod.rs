@@ -82,7 +82,9 @@ impl<'evh> YawwDisplay<'evh> {
             }
             Err(e) => return Err(e.into()),
         };
+        log::trace!("Created GuiThread");
         let handle = gt.handle();
+        log::trace!("Created GuiThreadHandle");
         Ok(Self {
             handle,
             associated: Arc::new(Data {
@@ -99,6 +101,7 @@ impl<'evh> YawwDisplay<'evh> {
     fn monitors(&self) -> crate::Result<&HashMap<Screen, MonitorInfo>> {
         let handle = self.handle.clone();
         self.associated.monitors.get_or_try_init(move || {
+            log::trace!("Initialized monitors");
             let monitors = handle.monitors()?.wait()?;
             crate::Result::Ok(
                 monitors
@@ -392,6 +395,8 @@ impl<'evh> Display<'evh> for YawwDisplay<'evh> {
 
     #[inline]
     fn run_with_boxed_event_handler(&mut self, mut handler: EventHandler<'evh>) -> crate::Result {
+        log::trace!("Running yaww main loop");
+
         let gt = self
             .associated
             .gui_thread
@@ -402,6 +407,8 @@ impl<'evh> Display<'evh> for YawwDisplay<'evh> {
             .map_err(|_| {
                 crate::Error::StaticMsg("Main loop can only be ran in the originating thread")
             })?;
+
+        log::trace!("Loaded main GuiThread");
         let mut this = self.clone();
         let event_handler: Box<
             dyn FnMut(&yaww::PinnedGuiThreadHandle<'evh>, yaww::Event) -> yaww::Result

@@ -3,6 +3,8 @@
 use gui_tools::{prelude::*, Color, DisplaySum, FillRule, Result, WindowProps};
 
 fn main() -> Result {
+    env_logger::init();
+
     let mut dpy = DisplaySum::create()?;
     let scr = dpy.default_screen()?;
     let root = dpy.toplevel_window(scr)?;

@@ -9,6 +9,9 @@ chalkboard = { path = "../chalkboard", features = ["breadx", "yaww"] }
 log = "0.4"
 parking_lot = { version = "0.11.1", optional = true }
 
+[dev-dependencies]
+env_logger = { version = "0.8", default-features = false, features = ["atty", "termcolor"] }
+
 [target.'cfg(unix)'.dependencies]
 breadx = { path = "../breadx" }
 
