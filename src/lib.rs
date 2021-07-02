@@ -29,3 +29,7 @@ pub use window::*;
 
 #[doc(inline)]
 pub use chalkboard::{Color, Error, FillRule, Result};
+
+pub mod prelude {
+    pub use super::{Display, DisplayExt, DisplayExtOwned};
+}

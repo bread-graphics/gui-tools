@@ -121,7 +121,7 @@ impl<Dpy: XDisplay> BreadxDisplay<Dpy> {
                 let cmap = self.display_mut().create_colormap(
                     subject_window,
                     visual,
-                    ColormapAlloc::All,
+                    ColormapAlloc::None,
                 )?;
                 self.colormaps.insert(visual, cmap);
                 Ok(cmap)
