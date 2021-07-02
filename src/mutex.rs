@@ -1,102 +1,44 @@
 // MIT/Apache2 License
 
-//! Shim for mutexes and rwlocks.
+//! Implementation of a mutex. This is backed by `std::sync::Mutex` when the `pl` feature is not enabled, and the
+//! `parking_lot::Mutex` when the `pl` feature is enabled.
 
-#[cfg(not(feature = "std"))]
-use spinning_top::Spinlock as Mutex;
-#[cfg(not(feature = "std"))]
-pub use spinning_top::SpinlockGuard as MutexGuard;
-#[cfg(not(feature = "std"))]
-use spinny::RwLock;
-#[cfg(not(feature = "std"))]
-pub use spinny::{RwLockReadGuard, RwLockWriteGuard};
+// At the moment, this is only used on the "yaww" and "itaos" platforms. breadx has no need for mutexes.
+#![cfg(any(windows, target_os = "macos"))]
 
-#[cfg(all(feature = "std", not(feature = "pl")))]
-use std::sync::{Mutex, RwLock};
-#[cfg(all(feature = "std", not(feature = "pl")))]
-pub use std::sync::{MutexGuard, RwLockReadGuard, RwLockWriteGuard};
+#[cfg(not(feature = "pl"))]
+use std::sync;
 
-#[cfg(all(feature = "std", feature = "pl"))]
-use parking_lot::{Mutex, RwLock};
-#[cfg(all(feature = "std", feature = "pl"))]
-pub use parking_lot::{MutexGuard, RwLockReadGuard, RwLockWriteGuard};
+pub(crate) struct Mutex<T: ?Sized> {
+    #[cfg(feature = "pl")]
+    inner: parking_lot::Mutex<T>,
+    #[cfg(not(feature = "pl"))]
+    inner: sync::Mutex<T>,
+}
 
-#[repr(transparent)]
-pub struct ShimMutex<T>(Mutex<T>);
-
-impl<T> ShimMutex<T> {
+impl<T> Mutex<T> {
     #[inline]
-    pub fn new(item: T) -> Self {
-        Self(Mutex::new(item))
-    }
-
-    #[cfg(any(not(feature = "std"), feature = "pl"))]
-    #[inline]
-    pub fn lock(&self) -> MutexGuard<'_, T> {
-        self.0.lock()
-    }
-
-    #[cfg(all(feature = "std", not(feature = "pl")))]
-    #[inline]
-    pub fn lock(&self) -> MutexGuard<'_, T> {
-        self.0.lock().unwrap()
-    }
-
-    #[cfg(any(not(feature = "std"), feature = "pl"))]
-    #[inline]
-    pub fn get_mut(&mut self) -> &mut T {
-        self.0.get_mut()
-    }
-
-    #[cfg(all(feature = "std", not(feature = "pl")))]
-    #[inline]
-    pub fn get_mut(&mut self) -> &mut T {
-        self.0.get_mut().unwrap()
+    pub(crate) fn new(data: T) -> Mutex<T> {
+        cfg_if::cfg_if! {
+            if #[cfg(feature = "pl")] {
+                Mutex { inner: parking_lot::Mutex::new(data) }
+            } else {
+                Mutex { inner: sync::Mutex::new(data) }
+            }
+        }
     }
 }
 
-#[repr(transparent)]
-pub struct ShimRwLock<T>(RwLock<T>);
-
-impl<T> ShimRwLock<T> {
+impl<T: ?Sized> Mutex<T> {
+    #[cfg(feature = "pl")]
     #[inline]
-    pub fn new(item: T) -> Self {
-        Self(RwLock::new(item))
+    pub(crate) fn lock(&self) -> parking_lot::MutexGuard<'_, T> {
+        self.inner.lock()
     }
 
-    #[cfg(any(not(feature = "std"), feature = "pl"))]
+    #[cfg(not(feature = "pl"))]
     #[inline]
-    pub fn read(&self) -> RwLockReadGuard<'_, T> {
-        self.0.read()
-    }
-
-    #[cfg(all(feature = "std", not(feature = "pl")))]
-    #[inline]
-    pub fn read(&self) -> RwLockReadGuard<'_, T> {
-        self.0.read().unwrap()
-    }
-
-    #[cfg(any(not(feature = "std"), feature = "pl"))]
-    #[inline]
-    pub fn write(&self) -> RwLockWriteGuard<'_, T> {
-        self.0.write()
-    }
-
-    #[cfg(all(feature = "std", not(feature = "pl")))]
-    #[inline]
-    pub fn write(&self) -> RwLockWriteGuard<'_, T> {
-        self.0.write().unwrap()
-    }
-
-    #[cfg(any(not(feature = "std"), feature = "pl"))]
-    #[inline]
-    pub fn get_mut(&mut self) -> &mut T {
-        self.0.get_mut()
-    }
-
-    #[cfg(all(feature = "std", not(feature = "pl")))]
-    #[inline]
-    pub fn get_mut(&mut self) -> &mut T {
-        self.0.get_mut().unwrap()
+    pub(crate) fn lock(&self) -> sync::MutexGuard<'_, T> {
+        self.inner.lock().expect("Unable to lock mutex")
     }
 }
