@@ -23,7 +23,7 @@ fn main() -> Result {
     )?;
     dpy.set_window_visibility(window, true)?;
 
-    dpy.run(|dpy, ev| Ok(()))?;
+    dpy.run(|dpy, ev| { println!("{:?}", &ev); Ok(()) })?;
 
     Ok(())
 }

@@ -6,6 +6,7 @@ mod event;
 
 use crate::{
     display::Display,
+    event::Event,
     screen::{Screen, ScreenIter},
     window::{Window, WindowProps},
     Dimensions, DrawHandler, EventHandler, FillRule,
@@ -13,13 +14,14 @@ use crate::{
 use breadx::{
     auto::xproto::InternAtomRequest,
     display::{prelude::*, Display as XDisplay, DisplayBase, DisplayConnection, RequestCookie},
-    Atom, AuthInfo, ColorAllocation, Colormap, ColormapAlloc, ConfigureWindowParameters, Gcontext,
-    Visualid, Window as BreadxWindow, WindowClass,
+    keyboard::KeyboardState,
+    Atom, AuthInfo, ColorAllocation, Colormap, ColormapAlloc, ConfigureWindowParameters, EventMask,
+    Gcontext, Visualid, Window as BreadxWindow, WindowClass,
 };
 use chalkboard::{breadx::FallbackBreadxSurface, Color};
 use std::{
     borrow::{Borrow, Cow},
-    collections::HashMap,
+    collections::hash_map::{Entry, HashMap},
     convert::TryInto,
     mem,
     num::NonZeroUsize,
@@ -30,6 +32,8 @@ use breadx::render::{Picture, PictureParameters, RenderDisplay};
 #[cfg(feature = "xrender")]
 use chalkboard::breadx::{RenderBreadxSurface, RenderResidual};
 
+pub(crate) const WM_DELETE_WINDOW: &str = "WM_DELETE_WINDOW";
+
 #[derive(Debug)]
 pub struct BreadxDisplay<Dpy> {
     manager: Manager<Dpy>,
@@ -38,6 +42,9 @@ pub struct BreadxDisplay<Dpy> {
     colormaps: HashMap<Visualid, Colormap>,
     window_visuals: HashMap<Window, Visualid>,
     atoms: HashMap<&'static str, Atom>,
+
+    // keeps track of keyboard state, lazily initialized
+    keyboard: Option<KeyboardState>,
 }
 
 #[derive(Debug)]
@@ -78,6 +85,7 @@ impl<Dpy: DisplayBase> BreadxDisplay<Dpy> {
                 colors: HashMap::new(),
             },
             colormaps: HashMap::new(),
+            keyboard: None,
             atoms: HashMap::new(),
         }
     }
@@ -108,6 +116,31 @@ impl BreadxDisplayConnection {
 }
 
 impl<Dpy: XDisplay> BreadxDisplay<Dpy> {
+    /// Get the atom for the given name, lazily interning it if we don't have it yet.
+    #[inline]
+    pub(crate) fn atom(&mut self, name: &'static str) -> crate::Result<Atom> {
+        match self.atoms.get(name) {
+            Some(atom) => Ok(*atom),
+            None => {
+                let atom = self.display_mut().intern_atom_immediate(name, false)?;
+                self.atoms.insert(name, atom);
+                Ok(atom)
+            }
+        }
+    }
+
+    /// Get the keyboard state we use.
+    #[inline]
+    pub(crate) fn keyboard(&mut self) -> crate::Result<&mut KeyboardState> {
+        match self.keyboard {
+            Some(ref mut keyboard) => Ok(keyboard),
+            None => {
+                let keyboard = KeyboardState::new(self.display_mut())?;
+                Ok(self.keyboard.insert(keyboard))
+            }
+        }
+    }
+
     #[inline]
     pub(crate) fn colormap_for_visual(
         &mut self,
@@ -304,6 +337,22 @@ impl<'evh, Dpy: breadx::Display> Display<'evh> for BreadxDisplay<Dpy> {
         // set atoms
         self.set_atoms_for_window(window, strings_to_set)?;
 
+        // set the wm protocol
+        let wdw = self.atom(WM_DELETE_WINDOW)?;
+        window.set_wm_protocols(self.display_mut(), &[wdw])?;
+
+        // tell the server which events we are interested in
+        window.set_event_mask(
+            self.display_mut(),
+            EventMask::KEY_PRESS
+                | EventMask::KEY_RELEASE
+                | EventMask::BUTTON_PRESS
+                | EventMask::BUTTON_RELEASE
+                | EventMask::POINTER_MOTION
+                | EventMask::EXPOSURE
+                | EventMask::STRUCTURE_NOTIFY,
+        )?;
+
         // install the window into our window_screens map
         let window = cvt_window_r(window);
         self.window_visuals.insert(window, visual);
@@ -484,7 +533,7 @@ impl<'evh, Dpy: breadx::Display> Display<'evh> for BreadxDisplay<Dpy> {
 
     #[inline]
     fn run_with_boxed_event_handler(&mut self, mut handler: EventHandler<'evh>) -> crate::Result {
-        loop {
+        'evloop: loop {
             // note: return on error, since the display is probably not sane if we error out
             let ev = match self.display_mut().wait_for_event() {
                 Ok(ev) => ev,
@@ -492,14 +541,16 @@ impl<'evh, Dpy: breadx::Display> Display<'evh> for BreadxDisplay<Dpy> {
                 Err(e) => return Err(e.into()),
             };
 
-            if let Some(ev) = self.convert_event(ev)? {
+            for ev in self.convert_event(ev)? {
                 let quit = ev.is_quit_event();
                 handler(self, ev)?;
                 if quit {
-                    break;
+                    break 'evloop;
                 }
             }
         }
+
+        handler(self, Event::Destroy)?;
 
         // free resources
         match &mut self.manager {
@@ -532,12 +583,12 @@ struct ParameterizerAndAtomSetting {
 }
 
 #[inline]
-fn cvt_window(win: Window) -> BreadxWindow {
+pub(crate) fn cvt_window(win: Window) -> BreadxWindow {
     BreadxWindow::const_from_xid(win.into_raw().get().try_into().expect("Not our window"))
 }
 
 #[inline]
-fn cvt_window_r(win: BreadxWindow) -> Window {
+pub(crate) fn cvt_window_r(win: BreadxWindow) -> Window {
     let n = NonZeroUsize::new(win.xid as usize)
         .expect("Window should never be 0 unless there is an error");
     Window::from_raw(n)

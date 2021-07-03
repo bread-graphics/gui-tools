@@ -442,6 +442,6 @@ fn cvt_window(window: Window) -> YWindow {
 }
 
 #[inline]
-fn cvt_window_r(window: YWindow) -> Window {
+pub(crate) fn cvt_window_r(window: YWindow) -> Window {
     Window::from_raw(window.into_raw())
 }
