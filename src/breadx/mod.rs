@@ -43,6 +43,11 @@ pub struct BreadxDisplay<Dpy> {
     window_visuals: HashMap<Window, Visualid>,
     atoms: HashMap<&'static str, Atom>,
 
+    // we keep around the sizes of the windows we create, so that we don't emit two events
+    // this is predicated on the idea that handling two events will be more costly than the cost of looking up
+    // the window ID and comparing it, which is likely true in production systems
+    window_dimensions: HashMap<Window, Dimensions>,
+
     // keeps track of keyboard state, lazily initialized
     keyboard: Option<KeyboardState>,
 }
@@ -84,6 +89,7 @@ impl<Dpy: DisplayBase> BreadxDisplay<Dpy> {
                 dpy,
                 colors: HashMap::new(),
             },
+            window_dimensions: HashMap::new(),
             colormaps: HashMap::new(),
             keyboard: None,
             atoms: HashMap::new(),
@@ -356,6 +362,15 @@ impl<'evh, Dpy: breadx::Display> Display<'evh> for BreadxDisplay<Dpy> {
         // install the window into our window_screens map
         let window = cvt_window_r(window);
         self.window_visuals.insert(window, visual);
+        self.window_dimensions.insert(
+            window,
+            Dimensions {
+                x,
+                y,
+                width,
+                height,
+            },
+        );
 
         Ok(window)
     }
@@ -365,6 +380,8 @@ impl<'evh, Dpy: breadx::Display> Display<'evh> for BreadxDisplay<Dpy> {
         if self.window_visuals.remove(&window).is_none() {
             return Err(crate::Error::NotOurWindow(window.into_raw()));
         }
+
+        self.window_dimensions.remove(&window);
 
         let window = cvt_window(window);
         window.free(self.display_mut())?;
@@ -413,6 +430,15 @@ impl<'evh, Dpy: breadx::Display> Display<'evh> for BreadxDisplay<Dpy> {
         width: u32,
         height: u32,
     ) -> crate::Result {
+        self.window_dimensions.insert(
+            window,
+            Dimensions {
+                x,
+                y,
+                width,
+                height,
+            },
+        );
         let window = cvt_window(window);
         let params = ConfigureWindowParameters {
             x: Some(x),
@@ -427,6 +453,14 @@ impl<'evh, Dpy: breadx::Display> Display<'evh> for BreadxDisplay<Dpy> {
 
     #[inline]
     fn window_set_coordinates(&mut self, window: Window, x: i32, y: i32) -> crate::Result {
+        match self.window_dimensions.get_mut(&window) {
+            None => return Err(crate::Error::NotOurWindow(window.into_raw())),
+            Some(wd) => {
+                wd.x = x;
+                wd.y = y;
+            }
+        }
+
         let window = cvt_window(window);
         let params = ConfigureWindowParameters {
             x: Some(x),
@@ -439,6 +473,14 @@ impl<'evh, Dpy: breadx::Display> Display<'evh> for BreadxDisplay<Dpy> {
 
     #[inline]
     fn window_set_size(&mut self, window: Window, width: u32, height: u32) -> crate::Result {
+        match self.window_dimensions.get_mut(&window) {
+            None => return Err(crate::Error::NotOurWindow(window.into_raw())),
+            Some(wd) => {
+                wd.width = width;
+                wd.height = height;
+            }
+        }
+
         let window = cvt_window(window);
         let params = ConfigureWindowParameters {
             width: Some(width),

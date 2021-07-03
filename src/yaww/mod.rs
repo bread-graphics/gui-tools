@@ -12,13 +12,13 @@ use crate::{
     Dimensions,
 };
 use chalkboard::yaww::{YawwGdiSurface, YawwGdiSurfaceResidual};
-use dashmap::{mapref::entry::Entry, DashMap};
+use dashmap::DashMap;
 use nanorand::RNG;
 use once_cell::sync::OnceCell;
 use std::{
     borrow::Cow,
     cell::RefCell,
-    collections::HashMap,
+    collections::hash_map::{Entry, HashMap},
     ffi::{CStr, CString},
     iter,
     num::NonZeroUsize,
@@ -95,6 +95,22 @@ impl<'evh> YawwDisplay<'evh> {
                 dcs: Mutex::new(HashMap::new()),
             }),
         })
+    }
+
+    #[inline]
+    pub(crate) fn store_dc(&self, window: YWindow, dc: Dc) {
+        let mut dcs = self.associated.dcs.lock();
+        match dcs.entry(window) {
+            Entry::Occupied(mut o) => {
+                o.get_mut().dc = Some(dc);
+            }
+            Entry::Vacant(v) => {
+                v.insert(DcOrMaybeResidual {
+                    dc: Some(dc),
+                    residual: None,
+                });
+            }
+        }
     }
 
     #[inline]
