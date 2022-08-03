@@ -15,21 +15,15 @@
 // Public License along with gui-tools. If not, see
 // <https://www.gnu.org/licenses/>.
 
-use core::num::NonZeroUsize;
+use super::Runtime;
+use alloc::boxed::Box;
 
-/// A window that belongs to a runtime.
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[repr(transparent)]
-pub struct Window(NonZeroUsize);
-
-impl Window {
-    /// Create a new window from a `NonZeroUsize`.
-    pub fn new(id: NonZeroUsize) -> Self {
-        Window(id)
-    }
-
-    /// Get the ID of the window.
-    pub fn id(self) -> NonZeroUsize {
-        self.0
-    }
+/// A sum type containing all of the `Runtime`s used on this
+/// system.
+#[non_exhaustive]
+pub enum GeneralRuntime {
+    /// A runtime not listed here.
+    Dynamic(Box<dyn Runtime + Send + 'static>),
 }
+
+impl Runtime for GeneralRuntime {}

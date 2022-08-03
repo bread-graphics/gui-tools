@@ -15,21 +15,12 @@
 // Public License along with gui-tools. If not, see
 // <https://www.gnu.org/licenses/>.
 
-use core::num::NonZeroUsize;
+#[cfg(feature = "std")]
+macro_rules! cfg_std {
+    ($($x:tt)*) => {$($x)*};
+}
 
-/// A window that belongs to a runtime.
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[repr(transparent)]
-pub struct Window(NonZeroUsize);
-
-impl Window {
-    /// Create a new window from a `NonZeroUsize`.
-    pub fn new(id: NonZeroUsize) -> Self {
-        Window(id)
-    }
-
-    /// Get the ID of the window.
-    pub fn id(self) -> NonZeroUsize {
-        self.0
-    }
+#[cfg(not(feature = "std"))]
+macro_rules! cfg_std {
+    ($($x:tt)*) => {};
 }

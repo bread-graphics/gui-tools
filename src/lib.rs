@@ -1,35 +1,37 @@
-// MIT/Apache2 License
+// This file is part of gui-tools.
+//
+// gui-tools is free software: you can redistribute it and/or
+// modify it under the terms of the GNU Lesser General Public
+// License as published by the Free Software Foundation,
+// either version 3 of the License, or (at your option)
+// any later version.
+//
+// gui-tools is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty
+// of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+// See the GNU Lesser General Public License for more details.
+//
+// You should have received a copy of the GNU Lesser General
+// Public License along with gui-tools. If not, see
+// <https://www.gnu.org/licenses/>.
 
-//! This crate simply acts as an abstraction over a variety of graphical user interface (GUI) libraries for a
-//! variety of platforms. `gui-tools` aims to be thread-safe, low-contention and versatile, but most of all tries
-//! to put as few layers between the user and the actual API as possible.
+//! `gui-tools` is a library that provides an abstracted windowing
+//! system for GUI development.
 
-#![forbid(unsafe_code)]
+#![no_std]
+#![forbid(unsafe_code, rust_2018_idioms)]
 
-#[cfg(unix)]
-pub mod breadx;
+#[macro_use]
+mod gates;
 
-#[cfg(windows)]
-pub mod yaww;
+extern crate alloc;
 
-pub mod display;
-pub mod event;
-pub mod geometry;
-pub mod screen;
-pub mod window;
+#[cfg(feature = "std")]
+extern crate std;
 
-pub(crate) mod init;
-pub(crate) mod mutex;
+pub mod async_runtime;
 
-pub use display::*;
-pub use event::*;
-pub use geometry::*;
-pub use screen::*;
-pub use window::*;
-
-#[doc(inline)]
-pub use chalkboard::{Color, Error, FillRule, Result};
-
-pub mod prelude {
-    pub use super::{Display, DisplayExt, DisplayExtOwned};
-}
+mod error;
+pub use error::{Error, Result};
+mod window;
+pub use window::Window;

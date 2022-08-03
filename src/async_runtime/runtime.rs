@@ -15,21 +15,13 @@
 // Public License along with gui-tools. If not, see
 // <https://www.gnu.org/licenses/>.
 
-use core::num::NonZeroUsize;
+use alloc::boxed::Box;
 
-/// A window that belongs to a runtime.
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[repr(transparent)]
-pub struct Window(NonZeroUsize);
+/// The runtime that has all of the functionality for the windowing
+/// system.
+pub trait Runtime {}
 
-impl Window {
-    /// Create a new window from a `NonZeroUsize`.
-    pub fn new(id: NonZeroUsize) -> Self {
-        Window(id)
-    }
+// Trait sub-implementations
+impl<R: Runtime + ?Sized> Runtime for &mut R {}
 
-    /// Get the ID of the window.
-    pub fn id(self) -> NonZeroUsize {
-        self.0
-    }
-}
+impl<R: Runtime + ?Sized> Runtime for Box<R> {}

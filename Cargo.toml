@@ -4,29 +4,12 @@ version = "0.1.0"
 edition = "2018"
 
 [dependencies]
-cfg-if = "1"
-chalkboard = { path = "../chalkboard", features = ["breadx", "yaww"] }
-gluten-keyboard = "0.1"
-log = "0.4"
-parking_lot = { version = "0.11.1", optional = true }
-tinyvec = { version = "1.1", features = ["alloc"] }
-
-[dev-dependencies]
-env_logger = { version = "0.8", default-features = false, features = ["atty", "termcolor"] }
-
-[target.'cfg(unix)'.dependencies]
-breadx = { path = "../breadx" }
-
-[target.'cfg(windows)'.dependencies]
-nanorand = "0.5"
-yaww = { path = "../yaww" }
-
-[target.'cfg(any(windows, target_os = "macos"))'.dependencies]
-dashmap = "4"
-once_cell = "1.8"
-thread-safe = "0.1"
+cfg-if = { version = "1.0.0", default-features = false }
+chalkboard = { path = "../chalkboard/chalkboard" }
+once_cell = { version = "1.13.0", default-features = false, features = ["alloc"] }
+spin = { version = "0.9.4", default-features = false, features = ["rwlock"] }
+tracing = { version = "0.1.36", default-features = false }
 
 [features]
-default = ["xrender"]
-pl = ["parking_lot", "chalkboard/parking_lot", "once_cell/parking_lot", "yaww/parking_lot"]
-xrender = ["breadx/render", "chalkboard/xrender"]
+default = ["std"]
+std = ["once_cell/std"]
